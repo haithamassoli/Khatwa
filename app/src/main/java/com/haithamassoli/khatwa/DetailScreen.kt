@@ -1,45 +1,45 @@
 package com.haithamassoli.khatwa
 
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
-import androidx.compose.material.icons.filled.AttachMoney
-import androidx.compose.material.icons.filled.BookmarkAdd
-import androidx.compose.material.icons.filled.Flag
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.outlined.Flag
+import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -49,7 +49,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,34 +56,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.BitmapDescriptorFactory
-import com.google.android.gms.maps.model.Dot
-import com.google.android.gms.maps.model.Gap
-import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.LatLngBounds
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.Polyline
-import com.google.maps.android.compose.CameraPositionState
-import com.google.maps.android.compose.rememberUpdatedMarkerState
 import kotlinx.coroutines.launch
 import java.util.Locale
-import java.util.UUID
 
-private val WalkStartColor = Color(0xFF1E88E5)
-private val DriveColor = Color(0xFFFF8F00) // amber: visible on light and dark map styles
-private val WalkEndColor = Color(0xFF8E24AA)
-
-private fun Pt.ll() = LatLng(lat, lng)
 private fun Pt.coords() = String.format(Locale.US, "%.6f,%.6f", lat, lng)
 
 // OWNER: UI-B agent.
@@ -96,19 +73,54 @@ fun DetailScreen(vm: MainViewModel) {
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var dialog by remember { mutableStateOf<String?>(null) } // "fare" | "report" | "keepP" | "keepD"
+    var dialog by remember { mutableStateOf<String?>(null) } // "fare" | "report"
+    var keep by remember { mutableStateOf<Candidate?>(null) }
+    var saved by remember { mutableStateOf(setOf<String>()) }
+    var menu by remember { mutableStateOf(false) }
+    val notify: (String) -> Unit = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    val isBase = option != null && (option == result?.baseline || option.pickup.isDirect && option.dropoff.isDirect)
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("تفاصيل الخيار") },
+                title = { Text(if (isBase) "الرحلة المباشرة" else "تفاصيل البديل") },
                 navigationIcon = {
                     IconButton(onClick = { vm.back() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
                     }
                 },
+                actions = {
+                    if (option != null && result != null) {
+                        Box {
+                            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "خيارات أخرى") }
+                            DropdownMenu(menu, onDismissRequest = { menu = false }) {
+                                if (!isBase) DropdownMenuItem(
+                                    text = { Text("مشاركة النقطتين") },
+                                    leadingIcon = { Icon(Icons.Outlined.Share, contentDescription = null) },
+                                    onClick = { menu = false; shareOption(context, option) },
+                                )
+                                if (!option.dropoff.isDirect) DropdownMenuItem(
+                                    text = { Text("المشي من النزول إلى الوجهة") },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.DirectionsWalk, contentDescription = null) },
+                                    onClick = { menu = false; Integrations.startWalking(context, result.input.destination) },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("سجّل سعراً رأيته") },
+                                    leadingIcon = { Icon(Icons.Outlined.Payments, contentDescription = null) },
+                                    onClick = { menu = false; dialog = "fare" },
+                                )
+                                if (!isBase) DropdownMenuItem(
+                                    text = { Text("إبلاغ عن نقطة") },
+                                    leadingIcon = { Icon(Icons.Outlined.Flag, contentDescription = null) },
+                                    onClick = { menu = false; dialog = "report" },
+                                )
+                            }
+                        }
+                    }
+                },
             )
         },
+        bottomBar = { if (option != null && result != null) DetailBottomBar(vm, option, context) },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { inner ->
         if (option == null || result == null) {
@@ -120,64 +132,77 @@ fun DetailScreen(vm: MainViewModel) {
             return@Scaffold
         }
         val input = result.input
-        val isBaselineOption = option == result.baseline
+        val base = result.baseline
         val detail = vm.detail
         val error = vm.detailError
-        val notify: (String) -> Unit = { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+        val data = remember(input, option, detail, result.baselinePolyline) {
+            RouteMapData(
+                input.origin, input.destination, option.pickup, option.dropoff,
+                baseline = if (isBase) emptyList() else result.baselinePolyline,
+                drive = detail?.drive?.takeIf { it.size > 1 } ?: option.drivePolyline.takeIf { it.size > 1 }
+                    ?: (if (isBase) result.baselinePolyline else emptyList()),
+                walkStart = detail?.walkStart?.takeIf { it.size > 1 }
+                    ?: if (option.pickup.isDirect) emptyList() else listOf(input.origin, option.pickup.pt),
+                walkEnd = detail?.walkEnd?.takeIf { it.size > 1 }
+                    ?: if (option.dropoff.isDirect) emptyList() else listOf(option.dropoff.pt, input.destination),
+            )
+        }
 
         Column(Modifier.fillMaxSize().padding(inner)) {
-            Box(Modifier.fillMaxWidth().height(300.dp)) {
-                DetailMap(input, option, detail)
-                if (detail == null && error == null) {
-                    CircularProgressIndicator(Modifier.align(Alignment.Center))
-                }
+            Box(Modifier.fillMaxWidth().height(240.dp)) {
+                RouteMap(
+                    data,
+                    contentDescription = "خريطة المسار: المشي إلى نقطة الركوب، مسار السيارة، والمشي من النزول إلى الوجهة",
+                    modifier = Modifier.fillMaxSize(),
+                    interactive = true,
+                    padding = 48.dp,
+                )
+                if (detail == null && error == null) CircularProgressIndicator(Modifier.align(Alignment.Center))
             }
-            MapLegend()
             Column(
                 Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                MapLegend(
+                    listOfNotNull(
+                        LegendDrive.copy(label = "السيارة").takeIf { data.drive.size > 1 },
+                        LegendWalk.takeIf { data.walkStart.size > 1 || data.walkEnd.size > 1 },
+                        LegendBaseline.takeIf { data.baseline.size > 1 },
+                    )
+                )
+                OptionSummary(option, base, input.objective)
+                if (option.verified) InfoLine(Icons.Outlined.Verified, "✓ تم التحقق من المسار الفعلي", color = MaterialTheme.colorScheme.primary)
+                val warnings = listOfNotNull(
+                    detail?.let { detailMismatch(option, base, input.objective, it) },
+                    detail?.let { walkOverrun(it, input) },
+                )
+                warnings.forEach { WarningCard(it) }
                 if (error != null) {
-                    Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "$error الأرقام أدناه من البحث.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                PointInfo("نقطة الركوب", option.pickup)
-                PointInfo("نقطة النزول", option.dropoff)
-
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("التقدير من البحث", style = MaterialTheme.typography.titleSmall)
-                        KwOptionMetrics(option)
+                PointLines(option, saved) { keep = it }
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("الأرقام", style = MaterialTheme.typography.titleSmall)
+                        OptionNumbers(option, base)
                     }
                 }
-
-                if (detail != null && (detail.walkStartS != null || detail.driveS != null || detail.walkEndS != null)) {
-                    DetailCheck(detail, input)
-                }
-
-                ActionsSection(
-                    option = option,
-                    input = input,
-                    onShare = { shareOption(context, option) },
-                    onWalk = { walkTo(context, it) },
-                    onFare = { dialog = "fare" },
-                    onReport = { dialog = "report" },
-                    onKeep = { dialog = it },
+                Text(
+                    "* الأوقات دون احتساب انتظار السائق. الطريق الذي يختاره السائق قد يختلف؛ تأكد من السعر في تطبيق التوصيل قبل الحجز.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
 
         when (dialog) {
-            "fare" -> FareDialog(
-                defaultBaseline = isBaselineOption,
-                hasBaseline = result.baseline != null,
+            "fare" -> QuickFareDialog(
+                vm, defaultBaseline = isBase,
                 onDismiss = { dialog = null },
-                onSave = { f ->
-                    // The names follow the trip the price was quoted for.
-                    val forOption = if (f.isBaseline) result.baseline ?: option else option
-                    vm.logFare(f.copy(pickupName = forOption.pickup.name, dropoffName = forOption.dropoff.name))
-                    dialog = null
-                    notify("سُجّل السعر في السجل")
-                },
+                onSaved = { dialog = null; notify("سُجّل السعر في السجل") },
             )
             "report" -> ReportDialog(
                 option = option,
@@ -185,137 +210,41 @@ fun DetailScreen(vm: MainViewModel) {
                 onReport = { c, reason ->
                     vm.reportPoint(c, reason)
                     dialog = null
-                    notify("سُجّل البلاغ وأُوقفت النقطة في البحث القادم")
+                    notify("شكراً، لن نقترح هذه النقطة مجدداً")
                 },
             )
-            "keepP", "keepD" -> {
-                val c = if (dialog == "keepP") option.pickup else option.dropoff
-                KeepPointDialog(
-                    c = c,
-                    onDismiss = { dialog = null },
-                    onSave = { name, side ->
-                        vm.keepAutoPoint(c, name, side)
-                        dialog = null
-                        notify("حُفظت النقطة كنقطة مراجعة")
-                    },
-                )
-            }
         }
-    }
-}
-
-@Composable
-private fun DetailMap(input: SearchInput, option: RouteOption, detail: OptionDetail?) {
-    val camera = remember { CameraPositionState() } // rememberCameraPositionState is inline, built for JVM 17
-    var loaded by remember { mutableStateOf(false) }
-    val points = remember(input, option, detail) {
-        listOf(input.origin, option.pickup.pt, option.dropoff.pt, input.destination) +
-            (detail?.let { it.walkStart + it.drive + it.walkEnd } ?: emptyList())
-    }
-    LaunchedEffect(loaded, points) {
-        if (!loaded) return@LaunchedEffect
-        val b = LatLngBounds.builder()
-        points.forEach { b.include(it.ll()) }
-        runCatching { camera.move(CameraUpdateFactory.newLatLngBounds(b.build(), 120)) }
-    }
-    GoogleMap(
-        modifier = Modifier.fillMaxSize(),
-        cameraPositionState = camera,
-        onMapLoaded = { loaded = true },
-    ) {
-        if (detail != null) {
-            val dotted = listOf(Dot(), Gap(10f))
-            if (detail.walkStart.size > 1) Polyline(detail.walkStart.map { it.ll() }, color = WalkStartColor, width = 12f, pattern = dotted)
-            if (detail.drive.size > 1) Polyline(detail.drive.map { it.ll() }, color = DriveColor, width = 10f)
-            if (detail.walkEnd.size > 1) Polyline(detail.walkEnd.map { it.ll() }, color = WalkEndColor, width = 12f, pattern = dotted)
-        }
-        Marker(
-            state = rememberUpdatedMarkerState(input.origin.ll()), title = "البداية",
-            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN),
-        )
-        Marker(
-            state = rememberUpdatedMarkerState(option.pickup.pt.ll()), title = "الركوب: ${option.pickup.name}",
-            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE),
-        )
-        Marker(
-            state = rememberUpdatedMarkerState(option.dropoff.pt.ll()), title = "النزول: ${option.dropoff.name}",
-            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_VIOLET),
-        )
-        Marker(
-            state = rememberUpdatedMarkerState(input.destination.ll()), title = "الوجهة",
-            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED),
-        )
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun MapLegend() {
-    FlowRow(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        LegendItem(WalkStartColor, dotted = true, "مشي إلى الركوب (منقط)")
-        LegendItem(DriveColor, dotted = false, "السيارة (متصل)")
-        LegendItem(WalkEndColor, dotted = true, "مشي من النزول (منقط)")
-    }
-}
-
-@Composable
-private fun LegendItem(color: Color, dotted: Boolean, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Canvas(Modifier.width(28.dp).height(8.dp)) {
-            drawLine(
-                color, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), strokeWidth = 6f,
-                pathEffect = if (dotted) PathEffect.dashPathEffect(floatArrayOf(6f, 8f)) else null,
+        keep?.let { c ->
+            KeepPointDialog(
+                c = c,
+                onDismiss = { keep = null },
+                onSave = { name, side ->
+                    vm.keepAutoPoint(c, name, side)
+                    saved = saved + c.id
+                    keep = null
+                    notify("حُفظت النقطة وستظهر في بحثك القادم")
+                },
             )
         }
-        Spacer(Modifier.width(4.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall)
     }
 }
 
 @Composable
-private fun PointInfo(title: String, c: Candidate) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        KwPointLine(title, c)
-        if (c.isDirect) {
-            Text("المكان نفسه — دون مشي", style = MaterialTheme.typography.bodySmall)
-        } else {
-            Text("جهة الشارع: ${c.roadSide.ifBlank { "غير محددة" }}", style = MaterialTheme.typography.bodySmall)
-            if (c.landmark.isNotBlank()) Text("معلم: ${c.landmark}", style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-@Composable
-private fun DetailCheck(d: OptionDetail, input: SearchInput) {
-    val overStart = d.walkStartS != null && d.walkStartS > input.maxWalkStartS
-    val overEnd = d.walkEndS != null && d.walkEndS > input.maxWalkEndS
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("التحقق التفصيلي", style = MaterialTheme.typography.titleSmall)
-            d.walkStartS?.let { KwMetricRow("مشي البداية", fmtDuration(it)) }
-            d.driveS?.let { KwMetricRow("وقت السيارة", fmtDuration(it)) }
-            d.walkEndS?.let { KwMetricRow("مشي النهاية", fmtDuration(it)) }
-            if (overStart || overEnd) {
-                Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.small) {
-                    Text(
-                        buildString {
-                            append("المسار التفصيلي للمشي ")
-                            append(
-                                when {
-                                    overStart && overEnd -> "عند الطرفين"
-                                    overStart -> "إلى نقطة الركوب"
-                                    else -> "من نقطة النزول"
-                                }
-                            )
-                            append(" يتجاوز الحد المحدد. هذا الخيار غير مُعتمد.")
-                        },
-                        Modifier.padding(8.dp),
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        fontWeight = FontWeight.Medium,
-                    )
+private fun DetailBottomBar(vm: MainViewModel, o: RouteOption, context: Context) {
+    Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+        Row(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            BookButton(vm, o, Modifier.weight(1f))
+            if (!o.pickup.isDirect) {
+                OutlinedButton(
+                    onClick = { Integrations.startWalking(context, o.pickup.pt) },
+                    modifier = Modifier.weight(1f).heightIn(min = 52.dp),
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.DirectionsWalk, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("ابدأ المشي")
                 }
             }
         }
@@ -323,180 +252,43 @@ private fun DetailCheck(d: OptionDetail, input: SearchInput) {
 }
 
 @Composable
-private fun ActionsSection(
-    option: RouteOption,
-    input: SearchInput,
-    onShare: () -> Unit,
-    onWalk: (Pt) -> Unit,
-    onFare: () -> Unit,
-    onReport: () -> Unit,
-    onKeep: (String) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        HorizontalDivider()
-        ActionButton(Icons.Default.Share, "مشاركة النقطتين", primary = true, onClick = onShare)
-        if (!option.pickup.isDirect) {
-            ActionButton(Icons.AutoMirrored.Filled.DirectionsWalk, "إرشاد المشي إلى نقطة الركوب") { onWalk(option.pickup.pt) }
+private fun WarningCard(text: String) {
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        ),
+    ) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
+            Icon(Icons.Default.WarningAmber, contentDescription = "تنبيه", modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(10.dp))
+            Text(text, style = MaterialTheme.typography.bodyMedium)
         }
-        if (!option.dropoff.isDirect) {
-            ActionButton(Icons.AutoMirrored.Filled.DirectionsWalk, "إرشاد المشي من النزول إلى الوجهة") { onWalk(input.destination) }
-        }
-        ActionButton(Icons.Default.AttachMoney, "تسجيل سعر معروض", onClick = onFare)
-        if (!option.pickup.isDirect || !option.dropoff.isDirect) {
-            ActionButton(Icons.Default.Flag, "إبلاغ عن نقطة", onClick = onReport)
-        }
-        if (option.pickup.auto && !option.pickup.isDirect) {
-            ActionButton(Icons.Default.BookmarkAdd, "حفظ نقطة الركوب كنقطة مراجعة") { onKeep("keepP") }
-        }
-        if (option.dropoff.auto && !option.dropoff.isDirect) {
-            ActionButton(Icons.Default.BookmarkAdd, "حفظ نقطة النزول كنقطة مراجعة") { onKeep("keepD") }
-        }
-        Text(
-            "تأكد من السعر في تطبيق التوصيل قبل الحجز. الطريق الذي يختاره السائق قد يختلف عن هذا التقدير.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
-@Composable
-private fun ActionButton(icon: ImageVector, text: String, primary: Boolean = false, onClick: () -> Unit) {
-    val content: @Composable () -> Unit = {
-        Icon(icon, contentDescription = null)
-        Spacer(Modifier.width(8.dp))
-        Text(text)
+private fun walkOverrun(d: OptionDetail, input: SearchInput): String? {
+    val overStart = d.walkStartS != null && input.maxWalkStartS > 0 && d.walkStartS > input.maxWalkStartS + 30
+    val overEnd = d.walkEndS != null && input.maxWalkEndS > 0 && d.walkEndS > input.maxWalkEndS + 30
+    val where = when {
+        overStart && overEnd -> "عند الطرفين"
+        overStart -> "إلى نقطة الركوب (${fmtDuration(d.walkStartS)})"
+        overEnd -> "من نقطة النزول (${fmtDuration(d.walkEndS)})"
+        else -> return null
     }
-    if (primary) Button(onClick, Modifier.fillMaxWidth()) { content() }
-    else OutlinedButton(onClick, Modifier.fillMaxWidth()) { content() }
+    return "المشي الفعلي $where أطول من الحد الذي اخترته."
 }
 
 private fun shareOption(context: Context, o: RouteOption) {
     fun block(label: String, c: Candidate) = buildString {
-        append("$label: ${c.name}\n")
+        append("$label: ${placeLabel(c)}\n")
         if (c.roadSide.isNotBlank()) append("الجهة: ${c.roadSide}\n")
-        append("${c.pt.coords()}\n")
         append("https://maps.google.com/?q=${c.pt.coords()}")
     }
     val text = block("نقطة الركوب", o.pickup) + "\n\n" + block("نقطة النزول", o.dropoff)
     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
     context.startActivity(Intent.createChooser(send, "مشاركة النقطتين"))
-}
-
-private fun walkTo(context: Context, p: Pt) {
-    val nav = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=${p.coords()}&mode=w"))
-        .setPackage("com.google.android.apps.maps")
-    try {
-        context.startActivity(nav)
-    } catch (_: ActivityNotFoundException) {
-        val web = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=${p.coords()}&travelmode=walking")
-        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, web)) }
-    }
-}
-
-/** Accepts Arabic-Indic digits and separators. Returns null for blank; NaN for invalid / non-positive. */
-private fun parseAmount(s: String): Double? {
-    val t = s.trim().map { ch ->
-        when (ch) {
-            in '٠'..'٩' -> '0' + (ch - '٠')
-            '٫', ',' -> '.'
-            else -> ch
-        }
-    }.joinToString("")
-    if (t.isEmpty()) return null
-    val v = t.toDoubleOrNull() ?: return Double.NaN
-    return if (v > 0) v else Double.NaN
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun FareDialog(
-    defaultBaseline: Boolean,
-    hasBaseline: Boolean,
-    onDismiss: () -> Unit,
-    onSave: (FareObservation) -> Unit,
-) {
-    var provider by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var currency by remember { mutableStateOf("JOD") }
-    var isBaseline by remember { mutableStateOf(defaultBaseline) }
-    var actual by remember { mutableStateOf("") }
-    var waitMin by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
-
-    val amountV = parseAmount(amount)
-    val actualV = parseAmount(actual)
-    val waitV = parseAmount(waitMin)
-    val valid = provider.isNotBlank() && amountV?.isNaN() != true && actualV?.isNaN() != true && waitV?.isNaN() != true
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("تسجيل سعر معروض") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(provider, { provider = it }, label = { Text("تطبيق التوصيل") }, singleLine = true)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("كريم", "أوبر", "جيني", "تاكسي أصفر").forEach { p ->
-                        FilterChip(selected = provider == p, onClick = { provider = p }, label = { Text(p) })
-                    }
-                }
-                OutlinedTextField(category, { category = it }, label = { Text("صنف السيارة") }, singleLine = true)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        amount, { amount = it }, Modifier.weight(2f),
-                        label = { Text("السعر (اتركه فارغاً إن لم يُعرف)") }, singleLine = true,
-                        isError = amountV?.isNaN() == true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    )
-                    OutlinedTextField(currency, { currency = it }, Modifier.weight(1f), label = { Text("العملة") }, singleLine = true)
-                }
-                Text("السعر يخص:", style = MaterialTheme.typography.labelLarge)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(
-                        selected = isBaseline, onClick = { isBaseline = true }, enabled = hasBaseline,
-                        label = { Text("السعر للخيار المباشر") },
-                    )
-                    FilterChip(selected = !isBaseline, onClick = { isBaseline = false }, label = { Text("للخيار البديل") })
-                }
-                Text("بعد الرحلة (اختياري)", style = MaterialTheme.typography.labelLarge)
-                OutlinedTextField(
-                    actual, { actual = it }, label = { Text("الأجرة الفعلية") }, singleLine = true,
-                    isError = actualV?.isNaN() == true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                )
-                OutlinedTextField(
-                    waitMin, { waitMin = it }, label = { Text("الانتظار الفعلي (دقائق)") }, singleLine = true,
-                    isError = waitV?.isNaN() == true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                )
-                OutlinedTextField(note, { note = it }, label = { Text("ملاحظة") })
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = valid,
-                onClick = {
-                    onSave(
-                        FareObservation(
-                            id = UUID.randomUUID().toString(),
-                            atMs = System.currentTimeMillis(),
-                            provider = provider.trim(),
-                            vehicleCategory = category.trim(),
-                            amount = amountV,
-                            currency = currency.trim().ifBlank { "JOD" },
-                            isBaseline = isBaseline,
-                            pickupName = "",
-                            dropoffName = "",
-                            actualFare = actualV,
-                            actualWaitS = waitV?.let { (it * 60).toInt() },
-                            note = note.trim(),
-                        )
-                    )
-                },
-            ) { Text("حفظ") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } },
-    )
 }
 
 @Composable
@@ -505,32 +297,23 @@ private fun ReportDialog(option: RouteOption, onDismiss: () -> Unit, onReport: (
         option.pickup.takeIf { !it.isDirect }?.let { "نقطة الركوب: ${it.name}" to it },
         option.dropoff.takeIf { !it.isDirect }?.let { "نقطة النزول: ${it.name}" to it },
     )
-    val reasons = listOf("جهة شارع خاطئة", "توقف غير مناسب", "مشي غير قابل للتنفيذ", "سبب آخر")
+    val reasons = listOf("جهة الشارع خاطئة", "لا يمكن التوقف هنا", "المشي غير ممكن أو غير آمن")
     var target by remember { mutableStateOf(targets.firstOrNull()?.second) }
     var reason by remember { mutableStateOf(reasons.first()) }
-    var other by remember { mutableStateOf("") }
-    val finalReason = if (reason == reasons.last()) other.trim() else reason
-
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("إبلاغ عن نقطة") },
+        title = { Text("ما المشكلة؟") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                targets.forEach { (label, c) -> RadioLine(label, target == c) { target = c } }
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                reasons.forEach { r -> RadioLine(r, reason == r) { reason = r } }
-                if (reason == reasons.last()) {
-                    OutlinedTextField(other, { other = it }, label = { Text("اكتب السبب") }, modifier = Modifier.fillMaxWidth())
+                if (targets.size > 1) {
+                    targets.forEach { (label, c) -> RadioLine(label, target == c) { target = c } }
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 }
-                Spacer(Modifier.height(8.dp))
-                Text("ستُوقف النقطة في عمليات البحث القادمة.", style = MaterialTheme.typography.bodySmall)
+                reasons.forEach { r -> RadioLine(r, reason == r) { reason = r } }
             }
         },
         confirmButton = {
-            TextButton(
-                enabled = target != null && finalReason.isNotBlank(),
-                onClick = { target?.let { onReport(it, finalReason) } },
-            ) { Text("إبلاغ") }
+            TextButton(enabled = target != null, onClick = { target?.let { onReport(it, reason) } }) { Text("إبلاغ") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } },
     )
@@ -538,29 +321,12 @@ private fun ReportDialog(option: RouteOption, onDismiss: () -> Unit, onReport: (
 
 @Composable
 private fun RadioLine(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = selected, onClick = onClick)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(selected, onClick = onClick, role = Role.RadioButton),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Spacer(Modifier.width(8.dp))
         Text(label, style = MaterialTheme.typography.bodyMedium)
     }
-}
-
-@Composable
-private fun KeepPointDialog(c: Candidate, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
-    var name by remember { mutableStateOf(c.name) }
-    var side by remember { mutableStateOf(c.roadSide) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("حفظ كنقطة مراجعة") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("تأكد من جهة الشارع ومن إمكانية التوقف قبل الحفظ.", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(name, { name = it }, label = { Text("الاسم") }, singleLine = true)
-                OutlinedTextField(side, { side = it }, label = { Text("جهة الطريق") }, singleLine = true)
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = name.isNotBlank(), onClick = { onSave(name.trim(), side.trim()) }) { Text("حفظ") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } },
-    )
 }

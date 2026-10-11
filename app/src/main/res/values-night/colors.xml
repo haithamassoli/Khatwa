@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirror ui/theme/Color.kt (dark). -->
+    <color name="khatwa_background">#FF0E1515</color>
+    <color name="khatwa_primary">#FF80D5D6</color>
+</resources>

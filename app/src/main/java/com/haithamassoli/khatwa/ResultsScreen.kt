@@ -1,21 +1,30 @@
 package com.haithamassoli.khatwa
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.NightsStay
+import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -24,22 +33,29 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import kotlinx.coroutines.launch
 
 // OWNER: UI-B agent.
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,6 +63,10 @@ import java.util.Locale
 fun ResultsScreen(vm: MainViewModel) {
     val status = vm.status
     val loading = status is SearchStatus.Loading
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var keep by remember { mutableStateOf<Candidate?>(null) }
+    var saved by remember { mutableStateOf(setOf<String>()) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -57,212 +77,244 @@ fun ResultsScreen(vm: MainViewModel) {
                     }
                 },
                 actions = {
-                    if (loading) {
-                        CircularProgressIndicator(Modifier.padding(end = 16.dp).size(24.dp), strokeWidth = 2.dp)
-                    } else {
-                        TextButton(onClick = { vm.search() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = null)
-                            Spacer(Modifier.width(4.dp))
-                            Text("إعادة البحث")
+                    if (status is SearchStatus.Done) {
+                        IconButton(onClick = { vm.search(force = true) }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "إعادة البحث")
                         }
                     }
                 },
             )
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { inner ->
         if (status !is SearchStatus.Done) {
             Column(
                 Modifier.fillMaxSize().padding(inner).padding(24.dp),
-                verticalArrangement = Arrangement.Center,
+                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 when (status) {
                     is SearchStatus.Loading -> {
                         CircularProgressIndicator()
-                        Spacer(Modifier.size(12.dp))
-                        Text("جارٍ حساب الخيارات…")
-                        Spacer(Modifier.size(12.dp))
+                        Text(stageText(status.stage), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                        LinearProgressIndicator(
+                            progress = { (status.stage.ordinal + 1f) / SearchStage.entries.size },
+                            modifier = Modifier.fillMaxWidth(0.6f),
+                        )
                         OutlinedButton(onClick = { vm.cancelSearch() }) { Text("إلغاء") }
                     }
-                    is SearchStatus.Error -> Text(status.message, color = MaterialTheme.colorScheme.error)
-                    else -> Text("لا توجد نتيجة حالية. عدّل المدخلات وابدأ البحث.")
+                    is SearchStatus.Error -> {
+                        Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(40.dp))
+                        Text(status.message, textAlign = TextAlign.Center)
+                        Button(onClick = { vm.search() }) { Text("حاول مرة أخرى") }
+                    }
+                    else -> Text("لا توجد نتيجة حالية. عدّل المدخلات وابدأ البحث.", textAlign = TextAlign.Center)
                 }
-                Spacer(Modifier.size(16.dp))
-                Button(onClick = { vm.back() }) { Text("رجوع إلى التخطيط") }
+                TextButton(onClick = { vm.back() }) { Text("رجوع إلى التخطيط") }
             }
             return@Scaffold
         }
         val r = status.result
         val base = r.baseline
+        val objective = r.input.objective
+        val best = r.alternatives.firstOrNull()
+        val onKeep: (Candidate) -> Unit = { keep = it }
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
                 start = 16.dp, end = 16.dp,
-                top = inner.calculateTopPadding() + 8.dp,
-                bottom = inner.calculateBottomPadding() + 16.dp,
+                top = inner.calculateTopPadding() + 4.dp,
+                bottom = inner.calculateBottomPadding() + 24.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { ResultsHeader(r) }
-            item {
-                if (base != null) {
-                    OptionCard(
-                        title = "المباشر — مرجع",
-                        option = base,
-                        baseline = null,
-                        highlight = false,
-                        onClick = { vm.openOption(base) },
-                    )
-                } else {
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                        Text(
-                            "تعذر حساب الخيار المباشر للمقارنة، لذلك لا تظهر فروق عن المرجع.",
-                            Modifier.padding(16.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                        )
+            (best ?: base)?.let { shown ->
+                val data = RouteMapData.of(r.input, shown, if (shown == base) emptyList() else r.baselinePolyline)
+                    .let { if (shown == base && it.drive.isEmpty()) it.copy(drive = r.baselinePolyline) else it }
+                if (data.points.size >= 2) item(key = "map") { ResultsMap(vm, data, shown == base) }
+            }
+            item(key = "notices") { Notices(vm, r) }
+            if (best == null) {
+                item(key = "empty") { EmptyState(vm, base) }
+            } else {
+                itemsIndexed(r.alternatives) { i, alt ->
+                    AlternativeCard(vm, alt, base, objective, best = i == 0 && r.alternatives.size > 1, saved = saved, onKeep = onKeep)
+                }
+                item(key = "baseline") {
+                    if (base != null) BaselineCard(vm, base)
+                    else InfoLine(Icons.Outlined.Info, "تعذر حساب الرحلة المباشرة للمقارنة، لذلك لا تظهر فروق عنها.")
+                }
+            }
+            item(key = "footer") { Footer(r) }
+        }
+    }
+
+    keep?.let { c ->
+        KeepPointDialog(
+            c = c,
+            onDismiss = { keep = null },
+            onSave = { name, side ->
+                vm.keepAutoPoint(c, name, side)
+                saved = saved + c.id
+                keep = null
+                scope.launch { snackbar.showSnackbar("حُفظت النقطة وستظهر في بحثك القادم") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ResultsMap(vm: MainViewModel, data: RouteMapData, directOnly: Boolean) {
+    Column {
+        Box(Modifier.fillMaxWidth().height(180.dp).clip(MaterialTheme.shapes.large)) {
+            RouteMap(
+                data,
+                contentDescription = if (directOnly) "خريطة الرحلة المباشرة من البداية إلى الوجهة"
+                else "خريطة تقارن المسار المباشر بالبديل، مع المشي إلى نقطة الركوب ومن نقطة النزول",
+                modifier = Modifier.fillMaxSize(),
+            )
+            // Transparent overlay: keeps list scrolling smooth over the static map and makes the whole map one tap target.
+            Box(
+                Modifier.matchParentSize().clickable(onClickLabel = "عرض التفاصيل", role = Role.Button) {
+                    (vm.status as? SearchStatus.Done)?.result?.let { r -> (r.alternatives.firstOrNull() ?: r.baseline)?.let(vm::openOption) }
+                }
+            )
+        }
+        val lines = listOfNotNull(
+            LegendBaseline.takeIf { data.baseline.size > 1 },
+            (if (directOnly) LegendDrive.copy(label = "المباشر") else LegendDrive).takeIf { data.drive.size > 1 },
+            LegendWalk.takeIf { data.walkStart.size > 1 || data.walkEnd.size > 1 },
+        )
+        if (lines.isNotEmpty()) MapLegend(lines)
+    }
+}
+
+@Composable
+private fun Notices(vm: MainViewModel, r: SearchResult) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (r.fromCache) {
+            InfoLine(Icons.Outlined.History, "نتيجة محفوظة من ${fmtAgo(r.calculatedAtMs)}،") {
+                TextButton(onClick = { vm.search(force = true) }) { Text("تحديث") }
+            }
+        }
+        if (r.night) InfoLine(Icons.Outlined.NightsStay, "بعد المغرب: عرضنا الركوب من الباب فقط")
+        if (r.droppedAfterCheck > 0) {
+            InfoLine(
+                Icons.Outlined.Verified,
+                if (r.droppedAfterCheck == 1) "استبعدنا بديلاً لأن التوفير اختفى عند التحقق من المسار الفعلي"
+                else "استبعدنا ${r.droppedAfterCheck} بدائل لأن التوفير اختفى عند التحقق من المسار الفعلي",
+            )
+        }
+        cleanWarnings(r.warnings).forEach { InfoLine(Icons.Outlined.Info, it) }
+    }
+}
+
+@Composable
+private fun AlternativeCard(
+    vm: MainViewModel,
+    o: RouteOption,
+    base: RouteOption?,
+    objective: Objective,
+    best: Boolean,
+    saved: Set<String>,
+    onKeep: (Candidate) -> Unit,
+) {
+    var expanded by rememberSaveable(o.pickup.id, o.dropoff.id) { mutableStateOf(false) }
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (best) StatusChip(Icons.Outlined.CheckCircle, "الأفضل")
+            OptionSummary(o, base, objective)
+            PointLines(o, saved, onKeep)
+            Column {
+                ExpandToggle(expanded, "عرض الأرقام", "إخفاء الأرقام") { expanded = !expanded }
+                AnimatedVisibility(expanded) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        HorizontalDivider()
+                        OptionNumbers(o, base)
+                        if (o.verified) InfoLine(Icons.Outlined.Verified, "✓ تم التحقق من المسار الفعلي", color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
-            if (r.alternatives.isEmpty()) {
-                item {
-                    Text(
-                        if (base != null) "الركوب والنزول المباشران هما الأفضل بين الخيارات المفحوصة"
-                        else "لا يوجد خيار صالح ضمن حدود المشي المحددة.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(vertical = 8.dp),
-                    )
-                }
-            } else {
-                itemsIndexed(r.alternatives) { i, alt ->
-                    OptionCard(
-                        title = "بديل ${i + 1}",
-                        option = alt,
-                        baseline = base,
-                        highlight = true,
-                        onClick = { vm.openOption(alt) },
-                    )
-                }
-            }
-            item {
-                Text(
-                    "النتائج مبنية على مجموعة محدودة من النقاط المفحوصة، ولا تضمن أفضل نقطة ممكنة ولا أقل أجرة. " +
-                        "تأكد من السعر في تطبيق التوصيل قبل الحجز.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BookButton(vm, o, Modifier.weight(1f))
+                OutlinedButton(onClick = { vm.openOption(o) }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text("التفاصيل") }
             }
         }
     }
 }
 
 @Composable
-private fun ResultsHeader(r: SearchResult) {
+private fun BaselineCard(vm: MainViewModel, base: RouteOption) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("أو الرحلة المباشرة", style = MaterialTheme.typography.titleMedium)
+            Text(
+                listOfNotNull(
+                    "${fmtDuration(base.driveS)} بالسيارة", fmtDistance(base.driveM), base.fareJod?.let { "~${fmtJod(it)}" },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BookButton(vm, base, Modifier.weight(1f), outlined = true, label = "احجز المباشر")
+                TextButton(onClick = { vm.openOption(base) }, modifier = Modifier.heightIn(min = 52.dp)) { Text("التفاصيل") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyState(vm: MainViewModel, base: RouteOption?) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+        Column(
+            Modifier.fillMaxWidth().padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (base == null) {
+                Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(40.dp))
+                Text("لا يوجد خيار صالح ضمن حدود المشي المحددة", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                Text("جرّب زيادة حد المشي أو أعد البحث بعد قليل.", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                OutlinedButton(onClick = { vm.back() }) { Text("تعديل البحث") }
+                return@Column
+            }
+            Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(44.dp))
+            Text("الرحلة المباشرة هي الأفضل الآن", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+            Text(
+                "لم نجد نقطة قريبة توفّر وقتاً يستحق المشي. اركب من مكانك.",
+                style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                listOfNotNull(
+                    "${fmtDuration(base.driveS)} بالسيارة", fmtDistance(base.driveM), base.fareJod?.let { "~${fmtJod(it)}" },
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BookButton(vm, base, Modifier.weight(1f))
+                OutlinedButton(onClick = { vm.openOption(base) }, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text("التفاصيل") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Footer(r: SearchResult) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        val time = SimpleDateFormat("HH:mm", Locale.US).format(Date(r.calculatedAtMs))
-        Text(
-            "آخر تحديث $time · ${if (r.trafficAware) "مع الزحمة الحية" else "دون زحمة حية"}",
-            style = MaterialTheme.typography.titleSmall,
-        )
+        Spacer(Modifier.height(4.dp))
+        HorizontalDivider()
         val failed = if (r.pairsFailed > 0) " · تعذر حساب ${r.pairsFailed}" else ""
-        Text("فُحص ${r.pairsChecked} زوجاً$failed", style = MaterialTheme.typography.bodySmall)
-        r.warnings.forEach { w ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.WarningAmber, contentDescription = "تنبيه",
-                    tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(w, style = MaterialTheme.typography.bodySmall)
-            }
-        }
-    }
-}
-
-@Composable
-private fun OptionCard(
-    title: String,
-    option: RouteOption,
-    baseline: RouteOption?,
-    highlight: Boolean,
-    onClick: () -> Unit,
-) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        colors = if (highlight) CardDefaults.cardColors() else
-            CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            if (highlight) {
-                KwPointLine("الركوب", option.pickup)
-                KwPointLine("النزول", option.dropoff)
-            }
-            HorizontalDivider()
-            KwOptionMetrics(option)
-            if (baseline != null) {
-                HorizontalDivider()
-                Text("مقارنة بالمباشر", style = MaterialTheme.typography.labelLarge)
-                DeltaLine("المشي والقيادة", option.modeledS - baseline.modeledS, fmtDeltaDuration(option.modeledS - baseline.modeledS))
-                DeltaLine("وقت السيارة", option.driveS - baseline.driveS, fmtDeltaDuration(option.driveS - baseline.driveS))
-                DeltaLine("مسافة السيارة", option.driveM - baseline.driveM, fmtDeltaDistance(option.driveM - baseline.driveM))
-                DeltaLine("المشي", option.walkTotalS - baseline.walkTotalS, fmtDeltaDuration(option.walkTotalS - baseline.walkTotalS))
-            }
-        }
-    }
-}
-
-@Composable
-internal fun KwPointLine(label: String, c: Candidate) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("$label: ${c.name}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false))
-        if (c.auto || c.verification == Verification.UNVERIFIED) {
-            Spacer(Modifier.width(6.dp))
-            KwBadge("غير مُراجعة", MaterialTheme.colorScheme.tertiaryContainer)
-        } else if (c.verification == Verification.REPORTED) {
-            Spacer(Modifier.width(6.dp))
-            KwBadge("مُبلغ عنها", MaterialTheme.colorScheme.errorContainer)
-        }
-    }
-}
-
-@Composable
-private fun KwBadge(text: String, color: Color) {
-    Surface(color = color, shape = MaterialTheme.shapes.small) {
-        Text(text, Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall)
-    }
-}
-
-/** Shared by the results cards and the detail screen. */
-@Composable
-internal fun KwOptionMetrics(o: RouteOption) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        KwMetricRow("مشي البداية", fmtDuration(o.walkStartS))
-        KwMetricRow("وقت السيارة", fmtDuration(o.driveS))
-        KwMetricRow("مشي النهاية", fmtDuration(o.walkEndS))
-        KwMetricRow("مسافة السيارة", fmtDistance(o.driveM))
-        KwMetricRow("المشي والقيادة — دون انتظار السائق", fmtDuration(o.modeledS), bold = true)
-    }
-}
-
-@Composable
-internal fun KwMetricRow(label: String, value: String, bold: Boolean = false) {
-    Row(Modifier.fillMaxWidth()) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = if (bold) FontWeight.Bold else null)
-    }
-}
-
-/** delta < 0 is better; colour is a secondary cue only, the text carries the meaning. */
-@Composable
-private fun DeltaLine(label: String, delta: Int, text: String) {
-    val color = when {
-        text.contains("تقريباً") -> MaterialTheme.colorScheme.onSurfaceVariant
-        delta < 0 -> Color(0xFF2E7D32)
-        else -> MaterialTheme.colorScheme.error
-    }
-    Row(Modifier.fillMaxWidth()) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Text(text, color = color, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+        Text(
+            "حُسبت الساعة ${fmtClock(r.calculatedAtMs)} · ${if (r.trafficAware) "مع الزحمة الحية" else "دون زحمة حية"} · فُحص ${r.pairsChecked} زوجاً$failed",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "* الأوقات دون احتساب انتظار السائق. النتائج مبنية على نقاط محدودة ولا تضمن أقل أجرة؛ تأكد من السعر في تطبيق التوصيل قبل الحجز.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

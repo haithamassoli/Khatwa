@@ -18,4 +18,11 @@ class PolylineTest {
 
     @Test
     fun emptyStringDecodesToEmptyList() = assertEquals(emptyList<Pt>(), Google.decodePolyline(""))
+
+    @Test
+    fun encodesGoogleReferenceExample() {
+        val pts = listOf(Pt(38.5, -120.2), Pt(40.7, -120.95), Pt(43.252, -126.453))
+        assertEquals("_p~iF~ps|U_ulLnnqC_mqNvxq`@", Google.encodePolyline(pts))
+        assertEquals(pts, Google.decodePolyline(Google.encodePolyline(pts)))
+    }
 }

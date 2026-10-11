@@ -11,7 +11,7 @@ import java.net.URL
 import java.net.URLEncoder
 import java.time.Instant
 
-// OWNER: data agent. Google Maps Platform REST calls (Routes v2, Roads, Places New, Geocoding).
+// OWNER: data agent. Google Maps Platform REST calls (Routes v2, Roads, Places New, Geocoding, Elevation).
 class Google(private val key: String) {
     /** WALK matrix, result[i][j] = origins[i] -> destinations[j]. */
     suspend fun walkMatrix(origins: List<Pt>, destinations: List<Pt>): List<List<Leg>> =
@@ -20,9 +20,7 @@ class Google(private val key: String) {
     /** DRIVE matrix. Returns (legs, trafficAware). Falls back to non-traffic routing if traffic call fails. */
     suspend fun driveMatrix(origins: List<Pt>, destinations: List<Pt>, departAtMs: Long?): Pair<List<List<Leg>>, Boolean> {
         val traffic = JSONObject().put("travelMode", "DRIVE").put("routingPreference", "TRAFFIC_AWARE")
-        if (departAtMs != null && departAtMs > System.currentTimeMillis() + 30_000) { // near-now: omit, Google defaults to now and rejects past times
-            traffic.put("departureTime", Instant.ofEpochMilli(departAtMs).toString())
-        }
+        departure(departAtMs)?.let { traffic.put("departureTime", it) }
         return try {
             matrix(origins, destinations, traffic) to true
         } catch (e: Exception) {
@@ -32,16 +30,23 @@ class Google(private val key: String) {
     }
 
     /** Single detailed route polyline + duration (seconds). */
-    suspend fun route(from: Pt, to: Pt, walk: Boolean): Pair<List<Pt>, Int?> {
+    suspend fun route(from: Pt, to: Pt, walk: Boolean): Pair<List<Pt>, Int?> = routeLeg(from, to, walk).let { it.points to it.durationS }
+
+    /** Detailed route with distance. DRIVE is TRAFFIC_AWARE and departs at [departAtMs] when that's in the future. */
+    suspend fun routeLeg(from: Pt, to: Pt, walk: Boolean, departAtMs: Long? = null): RouteLeg {
         val body = JSONObject()
             .put("origin", waypoint(from))
             .put("destination", waypoint(to))
             .put("travelMode", if (walk) "WALK" else "DRIVE")
-        if (!walk) body.put("routingPreference", "TRAFFIC_AWARE")
+        if (!walk) {
+            body.put("routingPreference", "TRAFFIC_AWARE")
+            departure(departAtMs)?.let { body.put("departureTime", it) }
+        }
         val res = JSONObject(post(ROUTES_URL, body, "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline"))
-        val r = res.optJSONArray("routes")?.optJSONObject(0) ?: return emptyList<Pt>() to null
+        val r = res.optJSONArray("routes")?.optJSONObject(0) ?: return RouteLeg(emptyList(), null, null)
         val poly = r.optJSONObject("polyline")?.optString("encodedPolyline").orEmpty()
-        return decodePolyline(poly) to seconds(r.optString("duration", "0s"))
+        return RouteLeg(decodePolyline(poly), seconds(r.optString("duration", "0s")),
+            if (r.has("distanceMeters")) r.getInt("distanceMeters") else null)
     }
 
     /** Roads API nearestRoads; may return several points per input (both directions). */
@@ -65,16 +70,56 @@ class Google(private val key: String) {
                 .put("radius", 30000.0)))
         val res = JSONObject(post("https://places.googleapis.com/v1/places:searchText", body,
             "places.displayName,places.formattedAddress,places.location"))
-        val arr = res.optJSONArray("places") ?: return emptyList()
-        return (0 until arr.length()).mapNotNull { i ->
-            val p = arr.getJSONObject(i)
-            val loc = p.optJSONObject("location") ?: return@mapNotNull null
-            PlaceHit(
-                name = p.optJSONObject("displayName")?.optString("text").orEmpty(),
-                address = p.optString("formattedAddress"),
-                pt = latLng(loc),
-            )
+        return places(res)
+    }
+
+    /** Places (New) searchNearby: named places within [radiusM] of [pt], nearest first. */
+    suspend fun nearbyPlaces(pt: Pt, radiusM: Double = 60.0, max: Int = 3): List<PlaceHit> {
+        val body = JSONObject()
+            .put("languageCode", "ar")
+            .put("regionCode", "JO")
+            .put("maxResultCount", max)
+            .put("rankPreference", "DISTANCE")
+            .put("locationRestriction", JSONObject().put("circle", JSONObject()
+                .put("center", JSONObject().put("latitude", pt.lat).put("longitude", pt.lng))
+                .put("radius", radiusM)))
+        val res = JSONObject(post("https://places.googleapis.com/v1/places:searchNearby", body, "places.displayName,places.location"))
+        return places(res).filter { it.name.isNotBlank() }
+    }
+
+    /** Name of the street at [pt] (reverse geocode filtered to routes), or null. */
+    suspend fun streetName(pt: Pt): String? {
+        val res = JSONObject(get("https://maps.googleapis.com/maps/api/geocode/json?latlng=${pt.lat},${pt.lng}&result_type=route&language=ar&key=$key"))
+        when (val status = res.optString("status")) {
+            "OK" -> Unit
+            "ZERO_RESULTS" -> return null
+            else -> throw IOException("Geocoding $status: ${res.optString("error_message")}".trimEnd(' ', ':'))
         }
+        val results = res.getJSONArray("results")
+        for (i in 0 until results.length()) {
+            val parts = results.getJSONObject(i).optJSONArray("address_components") ?: continue
+            for (k in 0 until parts.length()) {
+                val c = parts.getJSONObject(k)
+                val types = c.optJSONArray("types") ?: continue
+                if ((0 until types.length()).none { types.optString(it) == "route" }) continue
+                val name = c.optString("long_name").trim()
+                if (name.isNotEmpty() && !PLUS_CODE.matches(name) && name != "Unnamed Road" && "بدون اسم" !in name) return name
+            }
+        }
+        return null
+    }
+
+    /** Elevation API, meters above sea level, one value per point, in one request. */
+    suspend fun elevations(points: List<Pt>): List<Double> {
+        if (points.isEmpty()) return emptyList()
+        require(points.size <= 512) { "elevation: max 512 points" }
+        val q = points.joinToString("|") { "${it.lat},${it.lng}" }
+        val res = JSONObject(get("https://maps.googleapis.com/maps/api/elevation/json?locations=${enc(q)}&key=$key"))
+        val status = res.optString("status")
+        if (status != "OK") throw IOException("Elevation $status: ${res.optString("error_message")}".trimEnd(' ', ':'))
+        val arr = res.getJSONArray("results")
+        if (arr.length() != points.size) throw IOException("Elevation: ${arr.length()} of ${points.size} results")
+        return (0 until arr.length()).map { arr.getJSONObject(it).getDouble("elevation") }
     }
 
     suspend fun reverseGeocode(pt: Pt): String? {
@@ -93,6 +138,19 @@ class Google(private val key: String) {
         val best = names.firstOrNull { p -> p.isNotEmpty() && p.none { PLUS_CODE.matches(it) } }
             ?: names.firstOrNull()?.filterNot { PLUS_CODE.matches(it) }
         return best?.joinToString("، ")?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun places(res: JSONObject): List<PlaceHit> {
+        val arr = res.optJSONArray("places") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val p = arr.getJSONObject(i)
+            val loc = p.optJSONObject("location") ?: return@mapNotNull null
+            PlaceHit(
+                name = p.optJSONObject("displayName")?.optString("text").orEmpty(),
+                address = p.optString("formattedAddress"),
+                pt = latLng(loc),
+            )
+        }
     }
 
     private suspend fun matrix(origins: List<Pt>, destinations: List<Pt>, base: JSONObject): List<List<Leg>> {
@@ -150,6 +208,10 @@ class Google(private val key: String) {
 
         private fun latLng(o: JSONObject) = Pt(o.getDouble("latitude"), o.getDouble("longitude"))
 
+        /** Google defaults to now and rejects past times, so near-now departures are omitted. */
+        private fun departure(ms: Long?): String? =
+            if (ms != null && ms > System.currentTimeMillis() + 30_000) Instant.ofEpochMilli(ms).toString() else null
+
         private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
         /** "898s" -> 898. */
@@ -186,5 +248,30 @@ class Google(private val key: String) {
             }
             return out
         }
+
+        fun encodePolyline(pts: List<Pt>): String {
+            val sb = StringBuilder()
+            var lat = 0
+            var lng = 0
+            fun put(v: Int) {
+                var x = if (v < 0) (v shl 1).inv() else v shl 1
+                while (x >= 0x20) {
+                    sb.append(((0x20 or (x and 0x1f)) + 63).toChar())
+                    x = x ushr 5
+                }
+                sb.append((x + 63).toChar())
+            }
+            for (p in pts) {
+                val a = Math.round(p.lat * 1e5).toInt()
+                val b = Math.round(p.lng * 1e5).toInt()
+                put(a - lat)
+                put(b - lng)
+                lat = a
+                lng = b
+            }
+            return sb.toString()
+        }
     }
 }
+
+data class RouteLeg(val points: List<Pt>, val durationS: Int?, val distanceM: Int?)

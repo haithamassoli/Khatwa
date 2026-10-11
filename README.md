@@ -85,6 +85,35 @@ MAPS_API_KEY=your_api_key_here
 > [!TIP]
 > Restrict the key to your app's package name (`com.haithamassoli.khatwa`) and SHA-1 certificate fingerprint, and limit it to the APIs above.
 
+### Server proxy (recommended before publishing)
+
+By default the app calls Google directly, which means `MAPS_API_KEY` is compiled into the APK. Anyone can extract it, and the 100-searches-a-month cap is only checked on the device (clearing app data resets it).
+
+[`server/`](server/README.md) contains a small Cloudflare Worker that fixes this:
+
+- The Google key lives only on the server, as a Worker secret.
+- Each install gets a random id (`filesDir/install.json`), and the Worker enforces the monthly search quota per install plus a daily cap per IP.
+- Only the Google endpoints the app uses are forwarded, with matrix-size and field-mask checks.
+- It also stores community pickup/dropoff points (`CommunityPoints.kt` is the client).
+
+To use it, deploy the Worker (steps in [server/README.md](server/README.md#deploy)), then add its URL to `local.properties`:
+
+```properties
+KHATWA_PROXY_URL=https://khatwa-proxy.<account>.workers.dev
+MAPS_API_KEY=your_android_restricted_maps_sdk_key
+```
+
+When `KHATWA_PROXY_URL` is set:
+
+- Every REST call (Routes, Roads, Places, Geocoding, Elevation) goes to the proxy with an `X-Khatwa-Install` header and no key.
+- `BuildConfig.MAPS_API_KEY` is left empty.
+- `MAPS_API_KEY` is then used only for the Maps SDK map tiles (manifest). That key is safe to ship **only** if it's restricted to Android apps (package `com.haithamassoli.khatwa` + your SHA-1 fingerprints) and to the Maps SDK for Android. The REST key must never be shipped; keep it in the Worker.
+
+Leave `KHATWA_PROXY_URL` empty to keep calling Google directly (handy for local development).
+
+> [!NOTE]
+> The install id is random and isn't tied to an account, so reinstalling gives a fresh quota. The per-IP cap limits abuse. For real attestation, add Play Integrity checks to the Worker.
+
 ### Build and run
 
 ```bash
@@ -110,18 +139,21 @@ app/src/main/java/com/haithamassoli/khatwa/
 ├── Model.kt             # Shared data types (seconds and meters everywhere)
 ├── Engine.kt            # Pure ranking logic (Pareto filter + sort)
 ├── Searcher.kt          # Candidate selection, matrix calls, quota
-├── Google.kt            # Google Maps Platform REST client
+├── Google.kt            # Google Maps Platform REST client (direct or via the proxy)
+├── CommunityPoints.kt   # Client for shared points on the proxy
+├── Install.kt           # Random install id for the proxy quota
 ├── Store.kt             # Local JSON storage for points, fares, quota
 ├── PlanScreen.kt        # Start/destination/walk limits
 ├── ResultsScreen.kt     # Direct vs. alternatives
 ├── DetailScreen.kt      # Route map + fare logging
 ├── PointsScreen.kt      # Saved points
 └── HistoryScreen.kt     # Fare history
+server/                  # Optional Cloudflare Worker proxy (see server/README.md)
 ```
 
 ## Privacy
 
-There's no backend and no account. Saved points, fare history and the quota counter are stored as JSON files in the app's private storage on your device. Coordinates are sent only to Google Maps Platform to calculate routes.
+There's no backend and no account. Saved points, fare history and the quota counter are stored as JSON files in the app's private storage on your device. Coordinates are sent only to Google Maps Platform to calculate routes. If you build with the optional proxy, requests pass through your own Worker. It stores a random install id with a monthly search count, per-IP daily counters (kept for 2 days), and any community point votes. It doesn't store routes or searches.
 
 ## Disclaimer
 

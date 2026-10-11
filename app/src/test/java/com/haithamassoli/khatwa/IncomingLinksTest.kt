@@ -141,6 +141,12 @@ class IncomingLinksTest {
         assertEquals("", p.name) // generic label: the app reverse-geocodes instead
     }
 
+    @Test fun droppedPinSameLine() {
+        val p = IncomingLinks.plan("Dropped pin 31.9700, 35.9100", null)!!
+        assertPt(31.97, 35.91, p.pt)
+        assertEquals("", p.name)
+    }
+
     @Test fun shareWithFullUrl() {
         val p = IncomingLinks.plan("Rainbow Street https://www.google.com/maps/place/Rainbow+St/@31.9515,35.9230,17z/data=!3d31.9517!4d35.9231", null)!!
         assertPt(31.9517, 35.9231, p.pt)

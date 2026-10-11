@@ -73,6 +73,7 @@ internal fun MainViewModel.pointName(c: Candidate, start: Boolean): String =
 internal fun BookButton(vm: MainViewModel, o: RouteOption, modifier: Modifier = Modifier, outlined: Boolean = false, label: String = "احجز") {
     val context = LocalContext.current
     var open by remember { mutableStateOf(false) }
+    val askThen = rememberNotificationPermissionThen()
     val installed = remember { runCatching { Integrations.installedRideApps(context) }.getOrDefault(emptyList()) }
     val apps = remember(installed) { installed + RideApp.entries.filterNot { it in installed } }
     Box(modifier) {
@@ -101,8 +102,11 @@ internal fun BookButton(vm: MainViewModel, o: RouteOption, modifier: Modifier = 
                     leadingIcon = { Icon(Icons.Filled.LocalTaxi, contentDescription = null) },
                     onClick = {
                         open = false
-                        vm.tripBooked(o)
-                        Integrations.book(context, app, o.pickup.pt, vm.pointName(o.pickup, true), o.dropoff.pt, vm.pointName(o.dropoff, false))
+                        askThen {
+                            val r = Integrations.book(context, app, o.pickup.pt, vm.pointName(o.pickup, true), o.dropoff.pt, vm.pointName(o.dropoff, false))
+                            // Only ask for feedback when a ride app (or Uber web) actually opened.
+                            if (r != BookResult.FAILED && r != BookResult.OPENED_STORE) vm.tripBooked(o)
+                        }
                     },
                 )
             }

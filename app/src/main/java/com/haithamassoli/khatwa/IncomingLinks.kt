@@ -139,7 +139,12 @@ object IncomingLinks {
         return validPt(m.groupValues[1].toDouble(), m.groupValues[2].toDouble())
     }
 
-    fun isGenericLabel(s: String): Boolean = s.trim().lowercase() in GENERIC_LABELS || parseLatLng(s) != null
+    /** Generic labels, bare coordinates, or a generic label followed by coordinates ("Dropped pin 31.95, 35.91"). */
+    fun isGenericLabel(s: String): Boolean {
+        if (parseLatLng(s) != null) return true
+        val rest = LATLNG_IN_TEXT_RE.replace(s, " ").trim().trim(',', '،', ':', '-').trim().lowercase()
+        return rest.isEmpty() || rest in GENERIC_LABELS
+    }
 
     /**
      * Everything that can be decided without network: coordinates (if directly present), a display name

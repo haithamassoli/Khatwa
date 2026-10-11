@@ -33,7 +33,7 @@ The UI is in Arabic (RTL), and the walking heuristics are tuned for Amman's hill
 </p>
 
 <p align="center">
-  <sub><b>Plan</b>: set start, destination and how far you'll walk &nbsp;·&nbsp; <b>Results</b>: alternatives compared with the direct ride &nbsp;·&nbsp; <b>Detail</b>: walk and drive legs on the map</sub>
+  <sub><b>Plan</b>: map with a bottom sheet, frequent places and walking chips &nbsp;·&nbsp; <b>Results</b>: the saving first, landmark directions, mini map &nbsp;·&nbsp; <b>Detail</b>: verified numbers, Book and Start walking</sub>
 </p>
 
 ## Features

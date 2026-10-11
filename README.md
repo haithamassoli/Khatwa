@@ -88,7 +88,7 @@ MAPS_API_KEY=your_api_key_here
 ### Build and run
 
 ```bash
-git clone https://github.com/haithamassoli-plus-connect/Khatwa.git
+git clone https://github.com/haithamassoli44/Khatwa.git
 cd Khatwa
 ./gradlew installDebug
 ```

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_label">رحلات خطوة</string>
+    <string name="widget_description">اختصارات للبيت والعمل: اضغط لتجد أفضل نقطة ركوب من مكانك</string>
+    <string name="widget_title">خطوة</string>
+    <string name="widget_empty">افتح خطوة وأضف البيت أو العمل</string>
+    <string name="widget_sample_home">إلى البيت</string>
+    <string name="widget_sample_work">إلى العمل</string>
+    <string name="share_target_label">ابحث في خطوة</string>
+    <string name="tile_label">رحلة سريعة</string>
+</resources>

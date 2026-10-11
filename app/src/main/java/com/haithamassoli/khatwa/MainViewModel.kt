@@ -36,7 +36,7 @@ data class PlanState(
 
 // Shared UI contract. UI agents read state and call methods; don't add screens' private state here.
 class MainViewModel(app: Application) : AndroidViewModel(app) {
-    val store = Store(app)
+    val store = AppStore.get(app) // shared with the widget, quick tile and feedback receiver
     val google = Google(BuildConfig.MAPS_API_KEY, BuildConfig.KHATWA_PROXY_URL, Install.id(app), app.packageName, Install.certSha1(app))
     private val searcher = Searcher(google, store)
 
@@ -183,20 +183,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // Saved places & settings
-    fun savePlace(p: SavedPlace) = store.upsertPlace(p)
-    fun deletePlace(id: String) = store.deletePlace(id)
+    fun savePlace(p: SavedPlace) { store.upsertPlace(p); TripWidget.refresh(getApplication()) }
+    fun deletePlace(id: String) { store.deletePlace(id); TripWidget.refresh(getApplication()) }
     fun updateSettings(f: (Settings) -> Settings) = store.updateSettings(f)
 
     // Booking & feedback
-    /** Record a booked trip so we can ask 👍/👎 after roughly the trip duration. */
-    fun tripBooked(o: RouteOption) {
+    /** Record a booked trip and schedule the 👍/👎 notification for after roughly the trip duration. */
+    fun tripBooked(o: RouteOption): PendingTrip {
         val now = System.currentTimeMillis()
-        store.addPendingTrip(PendingTrip(UUID.randomUUID().toString(), now, now + (o.modeledS + 300) * 1000L, o.pickup, o.dropoff))
+        val trip = PendingTrip(UUID.randomUUID().toString(), now, now + (o.modeledS + 300) * 1000L, o.pickup, o.dropoff)
+        store.addPendingTrip(trip)
+        FeedbackNotifier.schedule(getApplication(), trip)
+        return trip
     }
 
     fun tripFeedback(t: PendingTrip, good: Boolean?) {
         if (good != null) { store.vote(t.pickup, good); store.vote(t.dropoff, good) }
         store.removePendingTrip(t.id)
+        FeedbackNotifier.cancel(getApplication(), t.id)
     }
 
     // Points

@@ -5,9 +5,18 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <queries>
         <package android:name="com.google.android.apps.maps" />
+        <!-- Ride apps (Integrations.kt). Jeeny's package is still the old Easy Taxi one. -->
+        <package android:name="com.ubercab" />
+        <package android:name="com.careem.acma" />
+        <package android:name="me.com.easytaxi" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="uber" />
+        </intent>
     </queries>
 
     <application
@@ -33,7 +42,80 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Shared place from Google Maps ("Share" sends name + maps.app.goo.gl link as text). -->
+            <intent-filter android:label="@string/share_target_label">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- geo: links from any app. -->
+            <intent-filter android:label="@string/share_target_label">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="geo" />
+            </intent-filter>
+            <!-- Google Maps web links (not verified: shows Khatwa in the "open with" chooser). -->
+            <intent-filter
+                android:autoVerify="false"
+                android:label="@string/share_target_label"
+                tools:ignore="AppLinkUrlError">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="maps.app.goo.gl" />
+                <data android:host="maps.google.com" />
+            </intent-filter>
+            <intent-filter
+                android:autoVerify="false"
+                android:label="@string/share_target_label"
+                tools:ignore="AppLinkUrlError">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="goo.gl" />
+                <data android:host="www.google.com" />
+                <data android:host="google.com" />
+                <data android:pathPrefix="/maps" />
+            </intent-filter>
+            <!-- Frequent trip from the widget / quick settings tile (TripLaunch). -->
+            <intent-filter>
+                <action android:name="com.haithamassoli.khatwa.TRIP" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".FeedbackNotifier"
+            android:exported="false" />
+
+        <receiver
+            android:name=".TripWidget"
+            android:exported="false"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/trip_widget_info" />
+        </receiver>
+
+        <service
+            android:name=".QuickTripTile"
+            android:exported="true"
+            android:icon="@drawable/ic_walk"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="false" />
+        </service>
     </application>
 
 </manifest>

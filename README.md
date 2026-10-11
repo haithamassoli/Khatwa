@@ -38,14 +38,25 @@ The UI is in Arabic (RTL), and the walking heuristics are tuned for Amman's hill
 
 ## Features
 
+- **Savings first**: each alternative leads with one sentence ("وفّر 8 دقائق: امشِ 3 د إلى أمام صيدلية X") and a mini map of the direct vs. alternative route. The detailed numbers are one tap away.
+- **Verified before shown**: the best alternatives and the direct trip are re-checked with a detailed traffic-aware route. If the saving disappears, the alternative is dropped, so the results and detail screens never contradict each other.
+- **Only worthwhile deals**: an alternative must save at least 3 minutes (or 10%), and walking must cost less than the time it saves.
+- **Book in one tap**: Uber opens with pickup and dropoff pre-filled; for Careem and Jeeny the pickup address is copied and the app opens. "ابدأ المشي" starts Google Maps walking navigation to the pickup.
+- **Share from Google Maps**: share any place to Khatwa (or open a `geo:` / Maps link) and it searches from your current location right away.
+- **Frequent trips**: Home / Work / University shortcuts, a home-screen widget and a Quick Settings tile.
+- **Landmark directions**: suggested points are described by the nearest landmark and street, not compass bearings.
+- **Amman-aware walking**: uphill walks get a climb penalty (Elevation API), and an optional "no walking after sunset" mode.
+- **Fare estimate**: a rough fare for each option, so you can see the time vs. money trade-off.
+- **Post-trip feedback**: after a booked trip the app asks 👍 / 👎; good points are saved, bad ones get disabled.
+- **Result cache**: repeated trips at the same hour reuse a recent result without spending quota.
 - **Pick start and destination** by tapping the map, searching places, or using your current location.
-- **Walking limits**: set the most you'll walk before pickup and after dropoff (0–10 min each).
+- **Walking limits**: preset chips for before pickup and after dropoff (none, 2, 5 or 10 min).
 - **Three ranking goals**: total trip time (walk + drive), drive time only, or drive distance only.
 - **Honest comparison**: every alternative is shown next to the direct door-to-door trip, with the difference in total time, drive time, distance and walking. Options that are worse on every metric are dropped.
 - **Traffic-aware**: drive times use live traffic, departing when you'd actually reach the pickup point.
 - **Saved points**: keep your own reviewed pickup/dropoff spots with road side and a nearby landmark. When you have none, the app suggests points on nearby roads automatically.
 - **Report bad points**: mark a point as wrong side of the road or unsafe to stop, and it's excluded from future searches.
-- **Fare log**: record the price the ride app quoted for the direct trip and for the alternative, so you can see over time whether it actually saves money.
+- **Fare log**: one number and a ride-app chip to record a quoted price, so you can see over time whether it actually saves money.
 - **Cost guard**: a monthly search cap (100 searches) and at most 25 drive-matrix elements per search keep Google Maps billing predictable.
 
 ## How it works
@@ -53,7 +64,9 @@ The UI is in Arabic (RTL), and the walking heuristics are tuned for Amman's hill
 1. Up to 5 candidate points per side are picked: the exact start/destination, then your saved points nearest-first, then auto-suggested points snapped to roads (Roads API) in rings around you.
 2. Walking times to each candidate come from the Routes API walk matrix. Candidates over your walking limit are dropped before any drive elements are requested.
 3. A traffic-aware drive matrix covers every remaining pickup × dropoff pair.
-4. [`Engine.rank`](app/src/main/java/com/haithamassoli/khatwa/Engine.kt) keeps only the Pareto-optimal pairs that beat the direct trip on your chosen goal, and returns the top 3.
+4. [`Engine.rank`](app/src/main/java/com/haithamassoli/khatwa/Engine.kt) keeps only the Pareto-optimal pairs that beat the direct trip by the minimum saving on your chosen goal, and returns the top 3.
+5. The direct trip and the top alternatives get a detailed traffic-aware route. Alternatives whose saving no longer clears the threshold are dropped.
+6. Auto-suggested points in the final list are named after the nearest landmark (Places API) and street.
 
 The ranking engine is plain Kotlin with no Android dependencies and has unit tests.
 
@@ -75,6 +88,7 @@ Enable these APIs in your Google Cloud project:
 - Roads API
 - Places API (New)
 - Geocoding API
+- Elevation API
 
 Then add the key to `local.properties` in the project root (this file is git-ignored):
 
@@ -83,7 +97,7 @@ MAPS_API_KEY=your_api_key_here
 ```
 
 > [!TIP]
-> Restrict the key to your app's package name (`com.haithamassoli.khatwa`) and SHA-1 certificate fingerprint, and limit it to the APIs above.
+> Restrict the key to Android apps with your package name (`com.haithamassoli.khatwa`) and SHA-1 certificate fingerprint, and limit it to the APIs above. The app sends `X-Android-Package` / `X-Android-Cert` headers on its REST calls, so this restriction also covers the Routes, Places, Roads, Geocoding and Elevation requests.
 
 ### Server proxy (recommended before publishing)
 
@@ -147,7 +161,17 @@ app/src/main/java/com/haithamassoli/khatwa/
 ├── ResultsScreen.kt     # Direct vs. alternatives
 ├── DetailScreen.kt      # Route map + fare logging
 ├── PointsScreen.kt      # Saved points
-└── HistoryScreen.kt     # Fare history
+├── HistoryScreen.kt     # Fare history
+├── OnboardingScreen.kt  # One-time welcome screen
+├── SettingsSheet.kt     # Night mode, default walk time
+├── ResultCache.kt       # Per-route/hour result cache
+├── Fare.kt              # Rough fare estimate
+├── Night.kt             # Sunset calculation
+├── Integrations.kt      # Booking deep links, walking navigation
+├── IncomingLinks.kt     # Shared places, geo: and Maps links
+├── FeedbackNotifier.kt  # Post-trip 👍/👎 notification
+├── TripWidget.kt        # Home-screen widget
+└── QuickTripTile.kt     # Quick Settings tile
 server/                  # Optional Cloudflare Worker proxy (see server/README.md)
 ```
 

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.Khatwa" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/khatwa_background</item>
+        <item name="android:colorPrimary">@color/khatwa_primary</item>
+        <item name="android:colorAccent">@color/khatwa_primary</item>
+        <item name="android:windowSplashScreenBackground">@color/khatwa_background</item>
+    </style>
+</resources>

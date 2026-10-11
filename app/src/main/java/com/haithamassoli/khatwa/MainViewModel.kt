@@ -37,7 +37,7 @@ data class PlanState(
 // Shared UI contract. UI agents read state and call methods; don't add screens' private state here.
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     val store = Store(app)
-    val google = Google(BuildConfig.MAPS_API_KEY)
+    val google = Google(BuildConfig.MAPS_API_KEY, BuildConfig.KHATWA_PROXY_URL, Install.id(app), app.packageName, Install.certSha1(app))
     private val searcher = Searcher(google, store)
 
     var screen by mutableStateOf(Screen.PLAN); private set

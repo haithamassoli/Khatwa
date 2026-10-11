@@ -12,7 +12,15 @@ import java.net.URLEncoder
 import java.time.Instant
 
 // OWNER: data agent. Google Maps Platform REST calls (Routes v2, Roads, Places New, Geocoding, Elevation).
-class Google(private val key: String) {
+// With a non-empty [proxyUrl] every call goes through the Khatwa proxy (server/), which holds the key; [key] is unused then.
+// [androidPackage]/[androidCert] let the key be restricted to this Android app in Google Cloud, REST calls included.
+class Google(
+    private val key: String,
+    private val proxyUrl: String = "",
+    private val installId: String = "",
+    private val androidPackage: String = "",
+    private val androidCert: String = "",
+) {
     /** WALK matrix, result[i][j] = origins[i] -> destinations[j]. */
     suspend fun walkMatrix(origins: List<Pt>, destinations: List<Pt>): List<List<Leg>> =
         matrix(origins, destinations, JSONObject().put("travelMode", "WALK"))
@@ -175,21 +183,30 @@ class Google(private val key: String) {
         requestMethod = "POST"
         doOutput = true
         setRequestProperty("Content-Type", "application/json")
-        setRequestProperty("X-Goog-Api-Key", key)
+        if (!viaProxy) setRequestProperty("X-Goog-Api-Key", key)
         setRequestProperty("X-Goog-FieldMask", fieldMask)
         outputStream.use { it.write(body.toString().toByteArray()) }
     }
 
     private suspend fun get(url: String): String = http(url) {}
 
+    private val viaProxy get() = proxyUrl.isNotEmpty()
+
     private suspend fun http(url: String, setup: HttpURLConnection.() -> Unit): String = withContext(Dispatchers.IO) {
-        val c = URL(url).openConnection() as HttpURLConnection
+        val c = URL(if (viaProxy) proxied(url, proxyUrl) else url).openConnection() as HttpURLConnection
         try {
             c.connectTimeout = 10_000
             c.readTimeout = 10_000
+            if (viaProxy) c.setRequestProperty(INSTALL_HEADER, installId)
+            else if (androidCert.isNotEmpty()) {
+                c.setRequestProperty("X-Android-Package", androidPackage)
+                c.setRequestProperty("X-Android-Cert", androidCert)
+            }
             c.setup()
             val code = c.responseCode
             val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            // The proxy's limits come back as 429 with an Arabic, user-facing message.
+            if (code == 429 && viaProxy) throw IOException(errorMessage(text) ?: "تم تجاوز حد الطلبات المسموح. حاول لاحقاً")
             if (code !in 200..299) throw IOException("HTTP $code${errorMessage(text)?.let { ": $it" } ?: ""}")
             text
         } finally {
@@ -200,6 +217,28 @@ class Google(private val key: String) {
     companion object {
         private const val MATRIX_URL = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix"
         private const val ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
+        const val INSTALL_HEADER = "X-Khatwa-Install"
+
+        /** Google endpoint -> proxy route (server/src/lib.ts ROUTES). Anything else is refused rather than sent with no key. */
+        private val PROXY_ROUTES = mapOf(
+            MATRIX_URL to "/routes/matrix",
+            ROUTES_URL to "/routes/route",
+            "https://places.googleapis.com/v1/places:searchText" to "/places/searchText",
+            "https://places.googleapis.com/v1/places:searchNearby" to "/places/searchNearby",
+            "https://roads.googleapis.com/v1/nearestRoads" to "/roads/nearestRoads",
+            "https://maps.googleapis.com/maps/api/geocode/json" to "/geocode/json",
+            "https://maps.googleapis.com/maps/api/elevation/json" to "/elevation/json",
+        )
+
+        /** Rewrites a Google REST [url] to the Khatwa proxy, keeping the query but dropping any `key=` parameter. */
+        fun proxied(url: String, proxyUrl: String): String {
+            val q = url.indexOf('?')
+            val base = if (q < 0) url else url.substring(0, q)
+            val route = requireNotNull(PROXY_ROUTES[base]) { "No proxy route for $base" }
+            val query = if (q < 0) "" else url.substring(q + 1).split('&')
+                .filter { it.isNotEmpty() && !it.startsWith("key=", ignoreCase = true) }.joinToString("&")
+            return proxyUrl.trimEnd('/') + route + if (query.isEmpty()) "" else "?$query"
+        }
         private val AMMAN = Pt(31.9539, 35.9106)
         private val PLUS_CODE = Regex("^[23456789CFGHJMPQRVWX]{4,8}\\+[23456789CFGHJMPQRVWX]{0,3}.*")
 

@@ -21,7 +21,11 @@ android {
         val localProps = Properties().apply { rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) } }
         val mapsKey = localProps.getProperty("MAPS_API_KEY", "")
         manifestPlaceholders["MAPS_API_KEY"] = mapsKey
-        buildConfigField("String", "MAPS_API_KEY", "\"$mapsKey\"")
+        // Proxy mode (see server/): REST calls go through the Worker, which holds the key, so none is compiled into
+        // BuildConfig. MAPS_API_KEY then only feeds the manifest (Maps SDK tiles) and should be Android-restricted.
+        val proxyUrl = localProps.getProperty("KHATWA_PROXY_URL", "").trim().trimEnd('/')
+        buildConfigField("String", "KHATWA_PROXY_URL", "\"$proxyUrl\"")
+        buildConfigField("String", "MAPS_API_KEY", "\"${if (proxyUrl.isEmpty()) mapsKey else ""}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

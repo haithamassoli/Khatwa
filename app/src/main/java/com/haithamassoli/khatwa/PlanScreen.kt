@@ -548,7 +548,7 @@ private fun PlanBottomBar(vm: MainViewModel, status: SearchStatus, plan: PlanSta
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             when (status) {
-                SearchStatus.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                is SearchStatus.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
                     Spacer(Modifier.width(12.dp))
                     Text("جارٍ البحث عن أفضل النقاط…", modifier = Modifier.weight(1f))

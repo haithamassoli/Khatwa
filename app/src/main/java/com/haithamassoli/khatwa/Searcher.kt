@@ -19,7 +19,7 @@ class QuotaExceededException(val resetsOn: String) : Exception("quota")
 // OWNER: data agent. Candidate selection + matrix calls + Engine.rank.
 class Searcher(private val google: Google, private val store: Store) {
     /** Validates input, reserves quota BEFORE any paid call, picks <=5 candidates per side, ranks. */
-    suspend fun search(requestId: Long, input: SearchInput): SearchResult {
+    suspend fun search(requestId: Long, input: SearchInput, force: Boolean = false, onStage: (SearchStage) -> Unit = {}): SearchResult {
         validate(input)
         if (!store.reserveSearch()) throw QuotaExceededException(YearMonth.now().plusMonths(1).atDay(1).toString())
 

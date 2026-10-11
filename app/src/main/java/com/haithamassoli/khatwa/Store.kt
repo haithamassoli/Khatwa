@@ -18,6 +18,12 @@ class Store(context: Context) {
     val fares: StateFlow<List<FareObservation>> = _fares
     private val _quota = MutableStateFlow(loadQuota())
     val quota: StateFlow<Quota> = _quota
+    private val _places = MutableStateFlow(readArray("places.json").mapNotNull { runCatching { place(it) }.getOrNull() })
+    val places: StateFlow<List<SavedPlace>> = _places
+    private val _settings = MutableStateFlow(loadSettings())
+    val settings: StateFlow<Settings> = _settings
+    private val _pendingTrips = MutableStateFlow(readArray("trips.json").mapNotNull { runCatching { trip(it) }.getOrNull() })
+    val pendingTrips: StateFlow<List<PendingTrip>> = _pendingTrips
 
     @Synchronized fun upsertCandidate(c: Candidate) {
         val list = _candidates.value
@@ -32,6 +38,56 @@ class Store(context: Context) {
     @Synchronized fun deleteFare(id: String) = saveFares(_fares.value.filterNot { it.id == id })
 
     @Synchronized fun clearHistory() = saveFares(emptyList())
+
+    @Synchronized fun upsertPlace(p: SavedPlace) {
+        // One HOME / WORK / UNIVERSITY each; OTHER can repeat.
+        val rest = _places.value.filterNot { it.id == p.id || (p.kind != PlaceKind.OTHER && it.kind == p.kind) }
+        savePlaces(rest + p)
+    }
+
+    @Synchronized fun deletePlace(id: String) = savePlaces(_places.value.filterNot { it.id == id })
+
+    @Synchronized fun updateSettings(f: (Settings) -> Settings) {
+        val s = f(_settings.value)
+        write("settings.json", JSONObject().put("onboarded", s.onboarded).put("noWalkAtNight", s.noWalkAtNight)
+            .put("defaultWalkS", s.defaultWalkS).toString())
+        _settings.value = s
+    }
+
+    @Synchronized fun addPendingTrip(t: PendingTrip) = saveTrips(_pendingTrips.value.filterNot { it.id == t.id } + t)
+
+    @Synchronized fun removePendingTrip(id: String) = saveTrips(_pendingTrips.value.filterNot { it.id == id })
+
+    /** Post-trip feedback. Saved points get a vote; auto/direct points are saved (as reviewed) on 👍, ignored on 👎. */
+    @Synchronized fun vote(c: Candidate, good: Boolean) {
+        val existing = _candidates.value.firstOrNull { it.id == c.id && !it.auto && !it.isDirect }
+        when {
+            existing != null -> upsertCandidate(
+                if (good) existing.copy(upVotes = existing.upVotes + 1)
+                else existing.copy(downVotes = existing.downVotes + 1).let { if (it.downVotes >= 2 && it.downVotes > it.upVotes) it.copy(enabled = false) else it }
+            )
+            good && !c.isDirect -> upsertCandidate(c.copy(id = java.util.UUID.randomUUID().toString(), auto = false, isDirect = false,
+                verification = Verification.VERIFIED, upVotes = 1))
+        }
+    }
+
+    /** Small key/value cache (e.g. search results). Returns null when missing or older than [maxAgeMs]. */
+    @Synchronized fun cacheGet(key: String, maxAgeMs: Long): String? {
+        val o = readCache().optJSONObject(key) ?: return null
+        return if (System.currentTimeMillis() - o.optLong("at") <= maxAgeMs) o.optString("v") else null
+    }
+
+    @Synchronized fun cachePut(key: String, value: String) {
+        val all = readCache().put(key, JSONObject().put("at", System.currentTimeMillis()).put("v", value))
+        // Keep the newest 40 entries.
+        val keys = all.keys().asSequence().toList().sortedByDescending { all.getJSONObject(it).optLong("at") }
+        keys.drop(40).forEach { all.remove(it) }
+        write("cache.json", all.toString())
+    }
+
+    @Synchronized fun cacheClear() { File(dir, "cache.json").delete() }
+
+    private fun readCache(): JSONObject = runCatching { JSONObject(File(dir, "cache.json").readText()) }.getOrDefault(JSONObject())
 
     /** Reserves one search for this month; false (and no change) if the quota is used up. */
     @Synchronized fun reserveSearch(): Boolean {
@@ -57,6 +113,23 @@ class Store(context: Context) {
         val o = runCatching { JSONObject(File(dir, "quota.json").readText()) }.getOrNull()
         return if (o != null && o.optString("month") == month) Quota(month, o.optInt("searches"), o.optInt("elements"), MAX_SEARCHES)
         else Quota(month, 0, 0, MAX_SEARCHES)
+    }
+
+    private fun loadSettings(): Settings {
+        val o = runCatching { JSONObject(File(dir, "settings.json").readText()) }.getOrNull() ?: return Settings()
+        return Settings(o.optBoolean("onboarded"), o.optBoolean("noWalkAtNight"), o.optInt("defaultWalkS", 300))
+    }
+
+    private fun savePlaces(list: List<SavedPlace>) {
+        write("places.json", JSONArray(list.map { JSONObject().put("id", it.id).put("kind", it.kind.name).put("name", it.name)
+            .put("lat", it.pt.lat).put("lng", it.pt.lng) }).toString())
+        _places.value = list
+    }
+
+    private fun saveTrips(list: List<PendingTrip>) {
+        write("trips.json", JSONArray(list.map { JSONObject().put("id", it.id).put("bookedAtMs", it.bookedAtMs)
+            .put("askAfterMs", it.askAfterMs).put("pickup", json(it.pickup)).put("dropoff", json(it.dropoff)) }).toString())
+        _pendingTrips.value = list
     }
 
     private fun saveCandidates(list: List<Candidate>) {
@@ -93,6 +166,7 @@ class Store(context: Context) {
             .put("roadSide", c.roadSide).put("landmark", c.landmark).put("use", c.use.name)
             .put("verification", c.verification.name).put("enabled", c.enabled)
             .put("auto", c.auto).put("isDirect", c.isDirect)
+            .put("street", c.street).put("upVotes", c.upVotes).put("downVotes", c.downVotes)
 
         private fun candidate(o: JSONObject) = Candidate(
             id = o.getString("id"),
@@ -105,6 +179,24 @@ class Store(context: Context) {
             enabled = o.optBoolean("enabled", true),
             auto = o.optBoolean("auto"),
             isDirect = o.optBoolean("isDirect"),
+            street = o.optString("street"),
+            upVotes = o.optInt("upVotes"),
+            downVotes = o.optInt("downVotes"),
+        )
+
+        private fun place(o: JSONObject) = SavedPlace(
+            id = o.getString("id"),
+            kind = runCatching { PlaceKind.valueOf(o.getString("kind")) }.getOrDefault(PlaceKind.OTHER),
+            name = o.optString("name"),
+            pt = Pt(o.getDouble("lat"), o.getDouble("lng")),
+        )
+
+        private fun trip(o: JSONObject) = PendingTrip(
+            id = o.getString("id"),
+            bookedAtMs = o.getLong("bookedAtMs"),
+            askAfterMs = o.getLong("askAfterMs"),
+            pickup = candidate(o.getJSONObject("pickup")),
+            dropoff = candidate(o.getJSONObject("dropoff")),
         )
 
         private fun json(f: FareObservation) = JSONObject()

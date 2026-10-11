@@ -19,7 +19,7 @@ enum class Screen { PLAN, RESULTS, DETAIL, POINTS, HISTORY }
 
 sealed interface SearchStatus {
     data object Idle : SearchStatus
-    data object Loading : SearchStatus
+    data class Loading(val stage: SearchStage = SearchStage.CANDIDATES) : SearchStatus
     data class Done(val result: SearchResult) : SearchStatus
     data class Error(val message: String) : SearchStatus
 }
@@ -29,8 +29,8 @@ data class PlanState(
     val originName: String = "",
     val destination: Pt? = null,
     val destinationName: String = "",
-    val maxWalkStartS: Int = 600,
-    val maxWalkEndS: Int = 600,
+    val maxWalkStartS: Int = 300,
+    val maxWalkEndS: Int = 300,
     val objective: Objective = Objective.MODELED,
 )
 
@@ -47,6 +47,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var detail by mutableStateOf<OptionDetail?>(null); private set
     var detailError by mutableStateOf<String?>(null); private set
     var locationMessage by mutableStateOf<String?>(null); private set
+
+    /** Set when the app was opened from a share / geo link and should search once the origin is known. */
+    var pendingAutoSearch by mutableStateOf(false); private set
+
+    init {
+        val d = store.settings.value.defaultWalkS
+        plan = plan.copy(maxWalkStartS = d, maxWalkEndS = d)
+    }
 
     private var requestId = 0L
     private var searchJob: Job? = null
@@ -100,16 +108,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (loc.accuracy > 50f) locationMessage = "دقة الموقع ضعيفة (±${loc.accuracy.toInt()} م). تأكد من النقطة على الخريطة أو اسحبها."
     }
 
-    fun search() {
+    /** [force] bypasses the local result cache. */
+    fun search(force: Boolean = false) {
         val p = plan
         val o = p.origin ?: return
         val d = p.destination ?: return
         cancelSearch()
         val id = ++requestId
-        status = SearchStatus.Loading
+        status = SearchStatus.Loading()
+        // Night rule: no walking after sunset when the user opted in.
+        val night = store.settings.value.noWalkAtNight && Night.isNight(o)
+        val input = SearchInput(o, d, if (night) 0 else p.maxWalkStartS, if (night) 0 else p.maxWalkEndS, p.objective)
         searchJob = viewModelScope.launch {
             val next = try {
-                SearchStatus.Done(searcher.search(id, SearchInput(o, d, p.maxWalkStartS, p.maxWalkEndS, p.objective)))
+                SearchStatus.Done(searcher.search(id, input, force) { stage ->
+                    if (id == requestId && status is SearchStatus.Loading) status = SearchStatus.Loading(stage)
+                }.let { if (night) it.copy(night = true) else it })
             } catch (e: CancellationException) {
                 throw e
             } catch (e: QuotaExceededException) {
@@ -127,7 +141,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         requestId++
         searchJob?.cancel()
         searchJob = null
-        if (status == SearchStatus.Loading) status = SearchStatus.Idle
+        if (status is SearchStatus.Loading) status = SearchStatus.Idle
     }
 
     fun openOption(o: RouteOption) {
@@ -146,6 +160,43 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 detailError = "تعذر تحميل المسار التفصيلي: ${e.message ?: ""}"
             }
         }
+    }
+
+    /** Opened from a shared place / geo link: set destination, then search from the current location (see [pendingAutoSearch]). */
+    fun applySharedDestination(pt: Pt, name: String) {
+        setDestination(pt, name)
+        screen = Screen.PLAN
+        pendingAutoSearch = true
+    }
+
+    /** UI calls this once the origin is set (or the user dismissed); runs the deferred search at most once. */
+    fun consumeAutoSearch() {
+        if (!pendingAutoSearch) return
+        pendingAutoSearch = false
+        if (plan.origin != null && plan.destination != null) search()
+    }
+
+    /** Start a frequent trip (shortcut, widget, quick tile): current origin stays unless [from] is given. */
+    fun startTrip(to: SavedPlace, from: SavedPlace? = null) {
+        if (from != null) setOrigin(from.pt, from.name)
+        applySharedDestination(to.pt, to.name)
+    }
+
+    // Saved places & settings
+    fun savePlace(p: SavedPlace) = store.upsertPlace(p)
+    fun deletePlace(id: String) = store.deletePlace(id)
+    fun updateSettings(f: (Settings) -> Settings) = store.updateSettings(f)
+
+    // Booking & feedback
+    /** Record a booked trip so we can ask 👍/👎 after roughly the trip duration. */
+    fun tripBooked(o: RouteOption) {
+        val now = System.currentTimeMillis()
+        store.addPendingTrip(PendingTrip(UUID.randomUUID().toString(), now, now + (o.modeledS + 300) * 1000L, o.pickup, o.dropoff))
+    }
+
+    fun tripFeedback(t: PendingTrip, good: Boolean?) {
+        if (good != null) { store.vote(t.pickup, good); store.vote(t.dropoff, good) }
+        store.removePendingTrip(t.id)
     }
 
     // Points

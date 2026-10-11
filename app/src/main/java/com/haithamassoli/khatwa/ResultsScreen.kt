@@ -46,7 +46,7 @@ import java.util.Locale
 @Composable
 fun ResultsScreen(vm: MainViewModel) {
     val status = vm.status
-    val loading = status == SearchStatus.Loading
+    val loading = status is SearchStatus.Loading
     Scaffold(
         topBar = {
             TopAppBar(
@@ -77,7 +77,7 @@ fun ResultsScreen(vm: MainViewModel) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 when (status) {
-                    SearchStatus.Loading -> {
+                    is SearchStatus.Loading -> {
                         CircularProgressIndicator()
                         Spacer(Modifier.size(12.dp))
                         Text("جارٍ حساب الخيارات…")

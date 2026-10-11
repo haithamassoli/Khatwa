@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
+  <!-- Khatwa: walk a few steps (dots), ride the rest (line), arrive (pin). -->
+  <rect width="108" height="108" fill="#00696B"/>
+  <g transform="translate(54 54) scale(0.9) translate(-55 -53)">
+    <circle cx="34" cy="76" r="5" fill="#FFFFFF"/>
+    <circle cx="42" cy="70" r="2.2" fill="#FFFFFF"/>
+    <circle cx="48" cy="64.5" r="2.2" fill="#FFFFFF"/>
+    <path d="M53.5,59.5Q60,53 70,56" fill="none" stroke="#FFB86C" stroke-width="5" stroke-linecap="round"/>
+    <path d="M70,26a11,11 0 0 1 11,11c0,8 -11,19 -11,19s-11,-11 -11,-19a11,11 0 0 1 11,-11zM70,32.5a4.5,4.5 0 1 0 0,9a4.5,4.5 0 1 0 0,-9z" fill="#FFFFFF" fill-rule="evenodd"/>
+  </g>
+</svg>

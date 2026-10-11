@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- In-app logo: the launcher icon's visible 72x72 area on a rounded tile. Source: /logo.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp"
+    android:height="72dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <path
+        android:fillColor="#00696B"
+        android:pathData="M16,0h40a16,16 0 0 1 16,16v40a16,16 0 0 1 -16,16h-40a16,16 0 0 1 -16,-16v-40a16,16 0 0 1 16,-16z" />
+    <group
+        android:translateX="-18"
+        android:translateY="-18">
+        <group
+            android:pivotX="54"
+            android:pivotY="54"
+            android:scaleX="0.9"
+            android:scaleY="0.9"
+            android:translateX="-0.9"
+            android:translateY="0.9">
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M34,76m-5,0a5,5 0 1 0 10,0a5,5 0 1 0 -10,0" />
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M42,70m-2.2,0a2.2,2.2 0 1 0 4.4,0a2.2,2.2 0 1 0 -4.4,0" />
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M48,64.5m-2.2,0a2.2,2.2 0 1 0 4.4,0a2.2,2.2 0 1 0 -4.4,0" />
+            <path
+                android:pathData="M53.5,59.5Q60,53 70,56"
+                android:strokeWidth="5"
+                android:strokeColor="#FFB86C"
+                android:strokeLineCap="round" />
+            <path
+                android:fillColor="#FFFFFF"
+                android:fillType="evenOdd"
+                android:pathData="M70,26a11,11 0 0 1 11,11c0,8 -11,19 -11,19s-11,-11 -11,-19a11,11 0 0 1 11,-11zM70,32.5a4.5,4.5 0 1 0 0,9a4.5,4.5 0 1 0 0,-9z" />
+        </group>
+    </group>
+</vector>

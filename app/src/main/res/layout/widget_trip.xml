@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:layoutDirection="rtl"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/widget_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:drawableStart="@drawable/ic_walk_widget"
+        android:drawablePadding="6dp"
+        android:gravity="center_vertical|start"
+        android:text="@string/widget_title"
+        android:textColor="@color/widget_on_surface"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        tools:ignore="UseCompatTextViewDrawableXml" />
+
+    <TextView
+        android:id="@+id/widget_empty"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:text="@string/widget_empty"
+        android:textColor="@color/widget_on_surface"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
+    <Button
+        android:id="@+id/widget_place_1"
+        style="@style/KhatwaWidgetButton"
+        android:text="@string/widget_sample_home" />
+
+    <Button
+        android:id="@+id/widget_place_2"
+        style="@style/KhatwaWidgetButton"
+        android:text="@string/widget_sample_work" />
+
+    <Button
+        android:id="@+id/widget_place_3"
+        style="@style/KhatwaWidgetButton"
+        android:visibility="gone" />
+</LinearLayout>

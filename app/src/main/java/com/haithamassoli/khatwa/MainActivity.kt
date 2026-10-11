@@ -6,6 +6,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -21,8 +23,10 @@ class MainActivity : ComponentActivity() {
                 // Arabic-only UI: force RTL regardless of device locale.
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                     val vm: MainViewModel = viewModel()
+                    val settings by vm.store.settings.collectAsState()
                     BackHandler(vm.screen != Screen.PLAN) { vm.back() }
-                    when (vm.screen) {
+                    if (!settings.onboarded) OnboardingScreen(vm)
+                    else when (vm.screen) {
                         Screen.PLAN -> PlanScreen(vm)
                         Screen.POINTS -> PointsScreen(vm)
                         Screen.RESULTS -> ResultsScreen(vm)

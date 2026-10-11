@@ -1,81 +1,126 @@
 package com.haithamassoli.khatwa
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.automirrored.filled.ListAlt
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.TripOrigin
-import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
-import androidx.compose.material.icons.automirrored.filled.ListAlt
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Work
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.rememberBottomSheetScaffoldState
+import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -96,9 +141,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
+import java.util.UUID
 
 private val AMMAN = LatLng(31.9539, 35.9106)
+
+private data class PlaceEdit(val kind: PlaceKind, val place: SavedPlace?)
+
+private fun hasLocationPermission(context: Context) =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,93 +158,214 @@ fun PlanScreen(vm: MainViewModel) {
     val status = vm.status
     val candidates by vm.store.candidates.collectAsState()
     val quota by vm.store.quota.collectAsState()
+    val places by vm.store.places.collectAsState()
+    val settings by vm.store.settings.collectAsState()
     val context = LocalContext.current
+    val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     // Reopen on the chosen points when returning from another screen.
     val camera = rememberCameraPositionState {
         val p = plan.destination ?: plan.origin
         position = if (p != null) CameraPosition.fromLatLngZoom(LatLng(p.lat, p.lng), 15f) else CameraPosition.fromLatLngZoom(AMMAN, 13f)
     }
+    val sheetState = rememberStandardBottomSheetState()
+    val scaffoldState = rememberBottomSheetScaffoldState(sheetState)
+    val sheetScroll = rememberScrollState()
 
     // true = next map tap sets the start, false = sets the destination.
     var settingStart by remember { mutableStateOf(plan.origin == null) }
     var permissionMessage by remember { mutableStateOf<String?>(null) }
     var locating by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showOptions by rememberSaveable { mutableStateOf(false) }
+    var managePlaces by remember { mutableStateOf(false) }
+    var placeEdit by remember { mutableStateOf<PlaceEdit?>(null) }
+    var peekPx by remember { mutableIntStateOf(0) }
+    var topPx by remember { mutableIntStateOf(0) }
 
     fun moveCamera(pt: Pt) = scope.launch {
         camera.animate(CameraUpdateFactory.newLatLngZoom(LatLng(pt.lat, pt.lng), 15f))
     }
 
-    // After "my location", follow the new origin once and advance to destination.
-    LaunchedEffect(plan.origin) {
-        val o = plan.origin
-        if (locating && o != null) {
-            locating = false
-            settingStart = false
-            moveCamera(o)
+    // Origin is set asynchronously; afterwards follow it once, advance to destination and run a pending shared search.
+    fun locate() {
+        permissionMessage = null
+        locating = true
+        val before = vm.plan.origin
+        scope.launch {
+            try { vm.useCurrentLocation().join() } finally { locating = false }
+            val now = vm.plan.origin
+            if (now != null && now != before) { settingStart = false; moveCamera(now) }
+            if (now == null) settingStart = true
+            vm.consumeAutoSearch()
         }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        if (result.values.any { it }) {
-            permissionMessage = null
-            locating = true
-            vm.useCurrentLocation()
-        } else {
-            permissionMessage = "لم يُمنح إذن الموقع. يمكنك تحديد البداية يدوياً بالضغط على الخريطة أو البحث بالاسم."
+        if (result.values.any { it }) locate()
+        else {
+            permissionMessage = "لم يُمنح إذن الموقع. حدد البداية بالضغط على الخريطة أو بالبحث عن اسم المكان."
+            settingStart = true
+            vm.consumeAutoSearch()
         }
     }
 
     fun requestLocation() {
-        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
-            permissionMessage = null
-            locating = true
-            vm.useCurrentLocation()
-        } else {
-            permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        if (hasLocationPermission(context)) locate()
+        else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+    }
+
+    // Opened from a shared place: destination is set, get the start from GPS then search.
+    LaunchedEffect(vm.pendingAutoSearch) {
+        if (!vm.pendingAutoSearch) return@LaunchedEffect
+        vm.plan.destination?.let { moveCamera(it) }
+        when {
+            hasLocationPermission(context) -> locate()
+            vm.plan.origin != null -> vm.consumeAutoSearch()
+            else -> requestLocation()
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(painterResource(R.drawable.ic_logo), contentDescription = null, modifier = Modifier.size(32.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Text("خطوة")
+    LaunchedEffect(sheetState.currentValue) {
+        if (sheetState.currentValue == SheetValue.PartiallyExpanded) sheetScroll.animateScrollTo(0)
+    }
+    BackHandler(sheetState.currentValue == SheetValue.Expanded) { scope.launch { sheetState.partialExpand() } }
+
+    fun openPlace(p: SavedPlace) {
+        vm.setDestination(p.pt, p.name)
+        moveCamera(p.pt)
+        if (vm.plan.origin == null) requestLocation()
+    }
+
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val handleHeight = 24.dp
+    val peek = (if (peekPx == 0) 300.dp else with(density) { peekPx.toDp() }) + handleHeight + navBottom
+    val nightNow = settings.noWalkAtNight && Night.isNight(plan.origin ?: plan.destination ?: Pt(AMMAN.latitude, AMMAN.longitude))
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val maxSheet = maxHeight - statusTop - 8.dp
+        BottomSheetScaffold(
+            scaffoldState = scaffoldState,
+            sheetPeekHeight = peek,
+            sheetShadowElevation = 8.dp,
+            sheetDragHandle = {
+                Box(
+                    Modifier.fillMaxWidth().height(handleHeight).semantics { contentDescription = "اسحب لعرض المزيد من الخيارات" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(Modifier.size(width = 36.dp, height = 4.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)))
+                }
+            },
+            sheetContent = {
+                Column(Modifier.fillMaxWidth().heightIn(max = maxSheet).imePadding().verticalScroll(sheetScroll)) {
+                    // Peek part: always visible above the navigation bar.
+                    Column(
+                        Modifier.onSizeChanged { peekPx = it.height }.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        ShortcutRow(
+                            places = places,
+                            onOpen = ::openPlace,
+                            onEdit = { k, p -> placeEdit = PlaceEdit(k, p) },
+                            onManage = { managePlaces = true },
+                        )
+                        val near = plan.origin ?: plan.destination
+                        val expand: () -> Unit = { scope.launch { sheetState.expand() } }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                PlaceField(
+                                    vm = vm,
+                                    label = "البداية",
+                                    icon = { Icon(Icons.Filled.TripOrigin, contentDescription = "البداية", tint = START_COLOR) },
+                                    pt = plan.origin,
+                                    name = plan.originName,
+                                    near = near,
+                                    onFocused = expand,
+                                    action = {
+                                        IconButton(onClick = ::requestLocation, enabled = !locating) {
+                                            if (locating) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                            else Icon(Icons.Filled.MyLocation, contentDescription = "استخدم موقعي الحالي")
+                                        }
+                                    },
+                                    onPick = { hit ->
+                                        vm.setOrigin(hit.pt, hit.name)
+                                        settingStart = false
+                                        moveCamera(hit.pt)
+                                    },
+                                )
+                                PlaceField(
+                                    vm = vm,
+                                    label = "الوجهة",
+                                    icon = { Icon(Icons.Filled.Flag, contentDescription = "الوجهة", tint = END_COLOR) },
+                                    pt = plan.destination,
+                                    name = plan.destinationName,
+                                    near = near,
+                                    onFocused = expand,
+                                    onPick = { hit ->
+                                        vm.setDestination(hit.pt, hit.name)
+                                        moveCamera(hit.pt)
+                                    },
+                                )
+                            }
+                            IconButton(onClick = vm::swap, enabled = plan.origin != null || plan.destination != null) {
+                                Icon(Icons.Filled.SwapVert, contentDescription = "تبديل البداية والوجهة")
+                            }
+                        }
+                        (permissionMessage ?: vm.locationMessage)?.let { InfoNote(it) }
+                        if (nightNow) InfoNote("بعد المغرب: نقترح الركوب من الباب فقط", Icons.Filled.Bedtime)
+                        SearchActions(vm, status, plan, quota)
                     }
-                },
-                actions = {
-                    TextButton(onClick = { vm.go(Screen.POINTS) }) {
-                        Icon(Icons.AutoMirrored.Filled.ListAlt, contentDescription = null)
-                        Spacer(Modifier.width(4.dp))
-                        Text("نقاطي")
+
+                    Column(
+                        Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        HorizontalDivider()
+                        Text("أقصى وقت مشي", style = MaterialTheme.typography.titleMedium)
+                        WalkPresetRow("قبل الركوب", plan.maxWalkStartS, enabled = !nightNow, onChange = vm::setWalkStart)
+                        WalkPresetRow("بعد النزول", plan.maxWalkEndS, enabled = !nightNow, onChange = vm::setWalkEnd)
+
+                        HorizontalDivider()
+                        ListItem(
+                            headlineContent = { Text("خيارات") },
+                            supportingContent = { Text(objectiveLabel(plan.objective)) },
+                            leadingContent = { Icon(Icons.Filled.Tune, contentDescription = null) },
+                            trailingContent = {
+                                Icon(if (showOptions) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = if (showOptions) "إخفاء الخيارات" else "عرض الخيارات")
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { showOptions = !showOptions },
+                        )
+                        AnimatedVisibility(showOptions) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("الأولوية", style = MaterialTheme.typography.labelLarge)
+                                ObjectiveChips(plan.objective, vm::setObjective)
+                                val activePoints = candidates.count { it.enabled && it.verification != Verification.REPORTED }
+                                Text(
+                                    "النقاط المحفوظة المفعّلة: $activePoints",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        if (plan.origin != null || plan.destination != null) {
+                            Text(
+                                "للتعديل الدقيق: اضغط مطولاً على العلامة في الخريطة واسحبها.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
-                    TextButton(onClick = { vm.go(Screen.HISTORY) }) {
-                        Icon(Icons.Filled.History, contentDescription = null)
-                        Spacer(Modifier.width(4.dp))
-                        Text("السجل")
-                    }
-                },
-            )
-        },
-        bottomBar = { PlanBottomBar(vm, status, plan, quota) },
-    ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .consumeWindowInsets(padding)
-                .imePadding()
+                }
+            },
         ) {
-            Box(Modifier.weight(0.42f).fillMaxWidth()) {
+            Box(Modifier.fillMaxSize()) {
                 PlanMap(
                     vm = vm,
                     camera = camera,
                     candidates = candidates,
+                    contentPadding = PaddingValues(top = with(density) { topPx.toDp() }, bottom = peek),
                     onTap = { pt ->
                         if (settingStart) {
                             vm.setOrigin(pt)
@@ -203,124 +375,66 @@ fun PlanScreen(vm: MainViewModel) {
                         }
                     },
                 )
-                // Mode toggle sits at the bottom of the map, within thumb reach.
-                Surface(
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    tonalElevation = 3.dp,
-                    shadowElevation = 3.dp,
+                Column(
+                    Modifier.fillMaxWidth().onSizeChanged { topPx = it.height }.statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            if (settingStart) "اضغط على الخريطة لتحديد البداية" else "اضغط على الخريطة لتحديد الوجهة",
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        SingleChoiceSegmentedButtonRow {
-                            SegmentedButton(
-                                selected = settingStart,
-                                onClick = { settingStart = true },
-                                shape = SegmentedButtonDefaults.itemShape(0, 2),
-                                icon = { Icon(Icons.Filled.TripOrigin, null, tint = START_COLOR, modifier = Modifier.size(18.dp)) },
-                            ) { Text("البداية") }
-                            SegmentedButton(
-                                selected = !settingStart,
-                                onClick = { settingStart = false },
-                                shape = SegmentedButtonDefaults.itemShape(1, 2),
-                                icon = { Icon(Icons.Filled.Flag, null, tint = END_COLOR, modifier = Modifier.size(18.dp)) },
-                            ) { Text("الوجهة") }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Surface(shape = RoundedCornerShape(24.dp), shadowElevation = 3.dp) {
+                            Row(Modifier.height(48.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Image(painterResource(R.drawable.ic_logo), contentDescription = null, modifier = Modifier.size(28.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("خطوة", style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                        Spacer(Modifier.weight(1f))
+                        MapButton(Icons.AutoMirrored.Filled.ListAlt, "نقاطي") { vm.go(Screen.POINTS) }
+                        MapButton(Icons.Filled.History, "السجل") { vm.go(Screen.HISTORY) }
+                        MapButton(Icons.Filled.Settings, "الإعدادات") { showSettings = true }
+                    }
+                    Surface(shape = RoundedCornerShape(24.dp), tonalElevation = 3.dp, shadowElevation = 3.dp) {
+                        Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                if (settingStart) "اضغط على الخريطة لتحديد البداية" else "اضغط على الخريطة لتحديد الوجهة",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            SingleChoiceSegmentedButtonRow {
+                                SegmentedButton(
+                                    selected = settingStart,
+                                    onClick = { settingStart = true },
+                                    shape = SegmentedButtonDefaults.itemShape(0, 2),
+                                    icon = { Icon(Icons.Filled.TripOrigin, null, tint = START_COLOR, modifier = Modifier.size(18.dp)) },
+                                ) { Text("البداية") }
+                                SegmentedButton(
+                                    selected = !settingStart,
+                                    onClick = { settingStart = false },
+                                    shape = SegmentedButtonDefaults.itemShape(1, 2),
+                                    icon = { Icon(Icons.Filled.Flag, null, tint = END_COLOR, modifier = Modifier.size(18.dp)) },
+                                ) { Text("الوجهة") }
+                            }
                         }
                     }
                 }
-            }
-
-            Column(
-                Modifier
-                    .weight(0.58f)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                val near = plan.origin ?: plan.destination
-                PlaceField(
-                    vm = vm,
-                    label = "البداية",
-                    icon = { Icon(Icons.Filled.TripOrigin, contentDescription = "البداية", tint = START_COLOR) },
-                    pt = plan.origin,
-                    name = plan.originName,
-                    near = near,
-                    onPick = { hit ->
-                        vm.setOrigin(hit.pt, hit.name)
-                        settingStart = false
-                        moveCamera(hit.pt)
-                    },
-                )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = ::requestLocation, enabled = !locating) {
-                        if (locating) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        else Icon(Icons.Filled.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("موقعي الحالي")
-                    }
-                    OutlinedButton(onClick = vm::swap, enabled = plan.origin != null || plan.destination != null) {
-                        Icon(Icons.Filled.SwapVert, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("تبديل")
-                    }
-                }
-                (permissionMessage ?: vm.locationMessage)?.let { InfoNote(it) }
-                PlaceField(
-                    vm = vm,
-                    label = "الوجهة",
-                    icon = { Icon(Icons.Filled.Flag, contentDescription = "الوجهة", tint = END_COLOR) },
-                    pt = plan.destination,
-                    name = plan.destinationName,
-                    near = near,
-                    onPick = { hit ->
-                        vm.setDestination(hit.pt, hit.name)
-                        moveCamera(hit.pt)
-                    },
-                )
-                if (plan.origin != null || plan.destination != null) {
-                    Text(
-                        "للتعديل الدقيق: اضغط مطولاً على العلامة واسحبها.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                HorizontalDivider()
-                WalkSlider("أقصى مشي قبل الركوب", plan.maxWalkStartS) { vm.setWalkStart(it) }
-                WalkSlider("أقصى مشي بعد النزول", plan.maxWalkEndS) { vm.setWalkEnd(it) }
-
-                HorizontalDivider()
-                Text("الأولوية", style = MaterialTheme.typography.titleMedium)
-                val objectives = listOf(
-                    Objective.MODELED to "أقل مشي وقيادة",
-                    Objective.DRIVE_TIME to "أقل وقت سيارة",
-                    Objective.DRIVE_DISTANCE to "أقل مسافة سيارة",
-                )
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    objectives.forEachIndexed { i, (o, label) ->
-                        SegmentedButton(
-                            selected = plan.objective == o,
-                            onClick = { vm.setObjective(o) },
-                            shape = SegmentedButtonDefaults.itemShape(i, objectives.size),
-                        ) {
-                            Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 2)
-                        }
-                    }
-                }
-                val activePoints = candidates.count { it.enabled && it.verification != Verification.REPORTED }
-                Text(
-                    "النقاط المحفوظة المفعّلة: $activePoints",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
             }
         }
+    }
+
+    if (showSettings) SettingsSheet(vm) { showSettings = false }
+    if (managePlaces) ManagePlacesDialog(
+        places = places,
+        onPick = { k, p -> managePlaces = false; placeEdit = PlaceEdit(k, p) },
+        onDismiss = { managePlaces = false },
+    )
+    placeEdit?.let { e ->
+        PlaceEditDialog(
+            edit = e,
+            plan = plan,
+            onSave = { vm.savePlace(it); placeEdit = null },
+            onDelete = { vm.deletePlace(it.id); placeEdit = null },
+            onDismiss = { placeEdit = null },
+        )
     }
 }
 
@@ -328,14 +442,21 @@ private val START_COLOR = Color(0xFF2E7D32)
 private val END_COLOR = Color(0xFFC62828)
 
 @Composable
-private fun PlanMap(vm: MainViewModel, camera: CameraPositionState, candidates: List<Candidate>, onTap: (Pt) -> Unit) {
+private fun MapButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+    Surface(shape = CircleShape, shadowElevation = 3.dp) {
+        IconButton(onClick = onClick) { Icon(icon, contentDescription = description) }
+    }
+}
+
+@Composable
+private fun PlanMap(vm: MainViewModel, camera: CameraPositionState, candidates: List<Candidate>, contentPadding: PaddingValues, onTap: (Pt) -> Unit) {
     val plan = vm.plan
     GoogleMap(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().semantics { contentDescription = "خريطة لاختيار نقطة البداية والوجهة" },
         cameraPositionState = camera,
         uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false, mapToolbarEnabled = false),
         onMapClick = { onTap(Pt(it.latitude, it.longitude)) },
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 80.dp),
+        contentPadding = contentPadding,
     ) {
         val activeIcon = remember { planDotIcon(0xFF1565C0.toInt()) }
         val offIcon = remember { planDotIcon(0xFF9E9E9E.toInt()) }
@@ -405,7 +526,9 @@ private fun PlaceField(
     pt: Pt?,
     name: String,
     near: Pt?,
+    onFocused: () -> Unit,
     onPick: (PlaceHit) -> Unit,
+    action: (@Composable () -> Unit)? = null,
 ) {
     val shown = when {
         pt == null -> ""
@@ -417,7 +540,7 @@ private fun PlaceField(
     var hits by remember { mutableStateOf<List<PlaceHit>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var searchTrigger by remember { mutableStateOf(0) }
+    var searchTrigger by remember { mutableIntStateOf(0) }
     val focus = LocalFocusManager.current
     val hitsView = remember { BringIntoViewRequester() }
     // Results render below the field; scroll them above the keyboard.
@@ -449,9 +572,9 @@ private fun PlaceField(
         OutlinedTextField(
             value = query,
             onValueChange = { query = it; typing = true; searchTrigger = 0 },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.isFocused) onFocused() },
             label = { Text(label) },
-            placeholder = { Text("ابحث عن مكان أو اضغط على الخريطة") },
+            placeholder = { Text("ابحث عن مكان أو اضغط على الخريطة", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             leadingIcon = icon,
             trailingIcon = {
                 when {
@@ -459,6 +582,7 @@ private fun PlaceField(
                     typing && query.isNotEmpty() -> IconButton(onClick = { query = ""; hits = emptyList() }) {
                         Icon(Icons.Filled.Clear, contentDescription = "مسح")
                     }
+                    action != null -> action()
                     else -> Icon(Icons.Filled.Search, contentDescription = null)
                 }
             },
@@ -500,98 +624,274 @@ private fun PlaceField(
     }
 }
 
+private fun kindLabel(k: PlaceKind) = when (k) {
+    PlaceKind.HOME -> "البيت"
+    PlaceKind.WORK -> "العمل"
+    PlaceKind.UNIVERSITY -> "الجامعة"
+    PlaceKind.OTHER -> "مكان آخر"
+}
+
+private fun kindIcon(k: PlaceKind) = when (k) {
+    PlaceKind.HOME -> Icons.Filled.Home
+    PlaceKind.WORK -> Icons.Filled.Work
+    PlaceKind.UNIVERSITY -> Icons.Filled.School
+    PlaceKind.OTHER -> Icons.Filled.Place
+}
+
+private val MAIN_KINDS = listOf(PlaceKind.HOME, PlaceKind.WORK, PlaceKind.UNIVERSITY)
+
 @Composable
-private fun WalkSlider(label: String, valueS: Int, onChange: (Int) -> Unit) {
-    val minutes = valueS / 60
+private fun ShortcutRow(
+    places: List<SavedPlace>,
+    onOpen: (SavedPlace) -> Unit,
+    onEdit: (PlaceKind, SavedPlace?) -> Unit,
+    onManage: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        MAIN_KINDS.forEach { k ->
+            val p = places.firstOrNull { it.kind == k }
+            ShortcutChip(
+                label = if (p != null) kindLabel(k) else "+ ${kindLabel(k)}",
+                icon = kindIcon(k),
+                set = p != null,
+                onClick = { if (p != null) onOpen(p) else onEdit(k, null) },
+                onLongClick = { onEdit(k, p) },
+            )
+        }
+        places.filter { it.kind == PlaceKind.OTHER }.forEach { p ->
+            ShortcutChip(p.name, kindIcon(p.kind), set = true, onClick = { onOpen(p) }, onLongClick = { onEdit(p.kind, p) })
+        }
+        IconButton(onClick = onManage) { Icon(Icons.Filled.Edit, contentDescription = "تعديل الأماكن المتكررة") }
+    }
+}
+
+@Composable
+private fun ShortcutChip(label: String, icon: ImageVector, set: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val shape = RoundedCornerShape(8.dp)
+    val colors = MaterialTheme.colorScheme
+    Row(
+        Modifier
+            .minimumInteractiveComponentSize()
+            .clip(shape)
+            .then(if (set) Modifier.background(colors.secondaryContainer) else Modifier.border(BorderStroke(1.dp, colors.outline), shape))
+            .combinedClickable(onClickLabel = if (set) "اذهب إلى $label" else "حفظ $label", onLongClickLabel = "تعديل", onLongClick = onLongClick, onClick = onClick)
+            .height(36.dp)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val tint = if (set) colors.onSecondaryContainer else colors.onSurfaceVariant
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, color = tint, maxLines = 1)
+    }
+}
+
+@Composable
+private fun ManagePlacesDialog(places: List<SavedPlace>, onPick: (PlaceKind, SavedPlace?) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("الأماكن المتكررة") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                val rows = MAIN_KINDS.map { k -> k to places.firstOrNull { it.kind == k } } +
+                    places.filter { it.kind == PlaceKind.OTHER }.map { it.kind to it }
+                rows.forEach { (k, p) ->
+                    ListItem(
+                        headlineContent = { Text(if (k == PlaceKind.OTHER && p != null) p.name else kindLabel(k)) },
+                        supportingContent = { Text(p?.name ?: "غير محدد", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        leadingContent = { Icon(kindIcon(k), contentDescription = null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier.clickable { onPick(k, p) },
+                    )
+                }
+                ListItem(
+                    headlineContent = { Text("+ مكان جديد") },
+                    leadingContent = { Icon(Icons.Filled.Place, contentDescription = null) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier.clickable { onPick(PlaceKind.OTHER, null) },
+                )
+                Text(
+                    "تلميح: اضغط مطولاً على أي اختصار لتعديله.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("إغلاق") } },
+    )
+}
+
+@Composable
+private fun PlaceEditDialog(edit: PlaceEdit, plan: PlanState, onSave: (SavedPlace) -> Unit, onDelete: (SavedPlace) -> Unit, onDismiss: () -> Unit) {
+    val (kind, place) = edit
+    val isNewOther = kind == PlaceKind.OTHER && place == null
+    val label = if (kind == PlaceKind.OTHER) place?.name ?: "مكان جديد" else kindLabel(kind)
+    fun save(pt: Pt, name: String) = onSave(
+        SavedPlace(
+            id = place?.id ?: UUID.randomUUID().toString(),
+            kind = kind,
+            name = name.ifBlank { if (kind == PlaceKind.OTHER) "مكان محفوظ" else kindLabel(kind) },
+            pt = pt,
+        )
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(kindIcon(kind), contentDescription = null) },
+        title = { Text(label) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    when {
+                        place != null -> "المحفوظ حالياً: ${place.name}"
+                        plan.destination == null && plan.origin == null ->
+                            "اختر الوجهة أولاً (بالبحث أو بالضغط على الخريطة)، ثم اضغط «+ $label» لحفظها والوصول إليها بضغطة واحدة."
+                        else -> "احفظ نقطة من رحلتك الحالية لتصل إليها بضغطة واحدة."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                plan.destination?.let { d ->
+                    TextButton(onClick = { save(d, plan.destinationName) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (isNewOther) "احفظ الوجهة الحالية كمكان جديد" else "اجعل الوجهة الحالية $label")
+                    }
+                }
+                plan.origin?.let { o ->
+                    TextButton(onClick = { save(o, plan.originName) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (isNewOther) "احفظ البداية الحالية كمكان جديد" else "اجعل البداية الحالية $label")
+                    }
+                }
+                place?.let { p ->
+                    TextButton(
+                        onClick = { onDelete(p) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    ) { Text("حذف الاختصار") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("إغلاق") } },
+    )
+}
+
+@Composable
+private fun WalkPresetRow(label: String, valueS: Int, enabled: Boolean, onChange: (Int) -> Unit) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.AutoMirrored.Filled.DirectionsWalk, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(6.dp))
-            Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            Text(planMinutesLabel(minutes), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Text(label, style = MaterialTheme.typography.bodyMedium)
         }
-        Slider(
-            value = minutes.toFloat(),
-            onValueChange = { onChange(it.roundToInt() * 60) },
-            valueRange = 0f..10f,
-            steps = 9,
-        )
+        WalkPresetChips(valueS, enabled = enabled, onChange = onChange)
     }
 }
 
-private fun planMinutesLabel(m: Int): String = when (m) {
-    0 -> "بدون مشي"
-    1 -> "دقيقة"
-    2 -> "دقيقتان"
-    in 3..10 -> "$m دقائق"
-    else -> "$m دقيقة"
+private fun objectiveLabel(o: Objective) = when (o) {
+    Objective.MODELED -> "أقل مشي وقيادة"
+    Objective.DRIVE_TIME -> "أقل وقت سيارة"
+    Objective.DRIVE_DISTANCE -> "أقل مسافة سيارة"
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ObjectiveChips(selected: Objective, onSelect: (Objective) -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Objective.entries.forEach { o ->
+            FilterChip(selected = selected == o, onClick = { onSelect(o) }, label = { Text(objectiveLabel(o)) })
+        }
+    }
 }
 
 @Composable
-private fun InfoNote(text: String) {
+private fun InfoNote(text: String, icon: ImageVector = Icons.Filled.Info) {
     Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(12.dp)) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
         }
     }
 }
 
+private fun stageLabel(s: SearchStage) = when (s) {
+    SearchStage.CANDIDATES -> "نبحث عن نقاط ركوب قريبة…"
+    SearchStage.WALKING -> "نحسب مسافات المشي…"
+    SearchStage.DRIVING -> "نقارن مسارات السيارة…"
+    SearchStage.VERIFYING -> "نتحقق من المسار الفعلي…"
+    SearchStage.NAMING -> "نحدد المعالم القريبة…"
+}
+
 @Composable
-private fun PlanBottomBar(vm: MainViewModel, status: SearchStatus, plan: PlanState, quota: Quota) {
+private fun SearchProgress(stage: SearchStage, onCancel: () -> Unit) {
+    val total = SearchStage.entries.size
+    val progress by animateFloatAsState((stage.ordinal + 1f) / total, label = "searchStage")
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(stageLabel(stage), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                Text(
+                    "الخطوة ${stage.ordinal + 1} من $total",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            OutlinedButton(onClick = onCancel) { Text("إلغاء") }
+        }
+        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+private fun SearchActions(vm: MainViewModel, status: SearchStatus, plan: PlanState, quota: Quota) {
     val ready = plan.origin != null && plan.destination != null
     val quotaFull = quota.maxSearches > 0 && quota.searches >= quota.maxSearches
-    Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
-        Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            when (status) {
-                is SearchStatus.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Text("جارٍ البحث عن أفضل النقاط…", modifier = Modifier.weight(1f))
-                    OutlinedButton(onClick = vm::cancelSearch) { Text("إلغاء") }
+    val quotaNear = quota.maxSearches > 0 && quota.searches * 5 >= quota.maxSearches * 4
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        when (status) {
+            is SearchStatus.Loading -> SearchProgress(status.stage, vm::cancelSearch)
+            is SearchStatus.Error -> {
+                Row(verticalAlignment = Alignment.Top) {
+                    Icon(Icons.Filled.ErrorOutline, contentDescription = "خطأ", tint = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.width(8.dp))
+                    Text(status.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 }
-                is SearchStatus.Error -> {
-                    Row(verticalAlignment = Alignment.Top) {
-                        Icon(Icons.Filled.ErrorOutline, contentDescription = "خطأ", tint = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.width(8.dp))
-                        Text(status.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Button(onClick = vm::search, enabled = ready, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                        Text("حاول مرة أخرى")
-                    }
-                }
-                is SearchStatus.Done -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { vm.go(Screen.RESULTS) }, modifier = Modifier.weight(1f).height(52.dp)) {
-                        Text("عرض النتائج")
-                    }
-                    OutlinedButton(onClick = vm::search, enabled = !quotaFull, modifier = Modifier.height(52.dp)) {
-                        Text("ابحث مجدداً")
-                    }
-                }
-                SearchStatus.Idle -> {
-                    Button(onClick = vm::search, enabled = ready && !quotaFull, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                        Icon(Icons.Filled.Search, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("ابحث")
-                    }
-                    if (!ready) {
-                        Text(
-                            "حدد البداية والوجهة أولاً",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                Button(onClick = { vm.search() }, enabled = ready && !quotaFull, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                    Text("حاول مرة أخرى")
                 }
             }
+            is SearchStatus.Done -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { vm.go(Screen.RESULTS) }, modifier = Modifier.weight(1f).height(52.dp)) {
+                    Text("عرض النتائج")
+                }
+                OutlinedButton(onClick = { vm.search(force = true) }, enabled = !quotaFull, modifier = Modifier.height(52.dp)) {
+                    Text("ابحث مجدداً")
+                }
+            }
+            SearchStatus.Idle -> {
+                Button(onClick = { vm.search() }, enabled = ready && !quotaFull, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                    Icon(Icons.Filled.Search, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("ابحث")
+                }
+                if (!ready) {
+                    Text(
+                        "حدد البداية والوجهة أولاً",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        if (quotaNear) {
             Text(
                 if (quotaFull) "استُنفدت حصة البحث هذا الشهر: ${quota.searches} / ${quota.maxSearches}"
-                else "البحث هذا الشهر: ${quota.searches} / ${quota.maxSearches}",
+                else "اقتربت من حد البحث الشهري: ${quota.searches} / ${quota.maxSearches}",
                 style = MaterialTheme.typography.labelMedium,
-                color = if (quotaFull) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (quotaFull) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
             )
         }
     }

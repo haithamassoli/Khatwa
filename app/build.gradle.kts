@@ -15,8 +15,8 @@ android {
         applicationId = "com.haithamassoli.khatwa"
         minSdk = 31
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         val localProps = Properties().apply { rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) } }
         val mapsKey = localProps.getProperty("MAPS_API_KEY", "")
@@ -26,8 +26,19 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val signing = Properties().apply { rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) } }
+    signingConfigs {
+        if (signing.getProperty("RELEASE_STORE_FILE") != null) create("release") {
+            storeFile = file(signing.getProperty("RELEASE_STORE_FILE"))
+            storePassword = signing.getProperty("RELEASE_STORE_PASSWORD")
+            keyAlias = signing.getProperty("RELEASE_KEY_ALIAS")
+            keyPassword = signing.getProperty("RELEASE_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")

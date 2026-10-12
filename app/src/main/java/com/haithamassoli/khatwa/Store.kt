@@ -122,7 +122,7 @@ class Store(context: Context) {
 
     private fun savePlaces(list: List<SavedPlace>) {
         write("places.json", JSONArray(list.map { JSONObject().put("id", it.id).put("kind", it.kind.name).put("name", it.name)
-            .put("lat", it.pt.lat).put("lng", it.pt.lng) }).toString())
+            .put("lat", it.pt.lat).put("lng", it.pt.lng).put("tip", it.tip) }).toString())
         _places.value = list
     }
 
@@ -189,6 +189,7 @@ class Store(context: Context) {
             kind = runCatching { PlaceKind.valueOf(o.getString("kind")) }.getOrDefault(PlaceKind.OTHER),
             name = o.optString("name"),
             pt = Pt(o.getDouble("lat"), o.getDouble("lng")),
+            tip = o.optString("tip"),
         )
 
         private fun trip(o: JSONObject) = PendingTrip(

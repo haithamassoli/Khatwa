@@ -80,19 +80,24 @@ object Integrations {
         else BookResult.FAILED
     }
 
-    /** Text placed on the clipboard for apps without a deep link. */
+    /**
+     * Text placed on the clipboard for apps without a deep link: something their place search can find.
+     * "أمام صيدلية الشفاء" → "صيدلية الشفاء"; unnamed points fall back to coordinates.
+     */
     fun pickupClipText(pickup: Pt, pickupName: String): String {
-        val ll = "${coord(pickup.lat)},${coord(pickup.lng)}"
-        return listOf(pickupName.trim(), ll, "https://maps.google.com/?q=$ll").filter { it.isNotEmpty() }.joinToString(" ")
+        val name = pickupName.trim().removePrefix("أمام ").removePrefix("قرب ").trim()
+        val unnamed = name.isEmpty() || name.startsWith("نقطة مقترحة") || name.startsWith("نقطة على الخريطة")
+        return if (unnamed) "${coord(pickup.lat)},${coord(pickup.lng)}" else name
     }
 
     private fun bookWithClipboard(context: Context, app: RideApp, pickup: Pt, pickupName: String): BookResult {
         val pkg = packageName(app)
         val launch = context.packageManager.getLaunchIntentForPackage(pkg)
         if (launch != null) {
+            val text = pickupClipText(pickup, pickupName)
             val cm = context.getSystemService(ClipboardManager::class.java)
-            cm?.setPrimaryClip(ClipData.newPlainText("نقطة الركوب", pickupClipText(pickup, pickupName)))
-            Toast.makeText(context, "نُسخ عنوان نقطة الركوب، الصقه في التطبيق", Toast.LENGTH_LONG).show()
+            cm?.setPrimaryClip(ClipData.newPlainText("نقطة الركوب", text))
+            Toast.makeText(context, "نُسخ «$text»: الصقه في خانة الركوب في ${label(app)}", Toast.LENGTH_LONG).show()
             if (start(context, launch)) return BookResult.OPENED_WITH_CLIPBOARD
         }
         return if (openStore(context, pkg)) BookResult.OPENED_STORE else BookResult.FAILED
@@ -161,6 +166,9 @@ object TripLaunch {
         else listOf(PlaceKind.HOME, PlaceKind.WORK, PlaceKind.UNIVERSITY)
         return prefs.firstNotNullOfOrNull { k -> places.firstOrNull { it.kind == k } } ?: places.firstOrNull()
     }
+
+    /** Widget button: destination plus the last result, so the common answer is visible without opening the app. */
+    fun widgetLabel(p: SavedPlace): String = if (p.tip.isBlank()) label(p) else "${label(p)} · ${p.tip}"
 
     fun label(p: SavedPlace): String = when (p.kind) {
         PlaceKind.HOME -> "إلى البيت"

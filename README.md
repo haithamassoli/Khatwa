@@ -25,25 +25,25 @@ The UI is in Arabic (RTL), and the walking heuristics are tuned for Amman's hill
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/1-plan.png" width="260" alt="Plan screen: pick start, destination and max walking time">
+  <img src="docs/screenshots/1-plan.png" width="260" alt="Plan screen: start, destination and one search button; options folded into one line">
   &nbsp;
-  <img src="docs/screenshots/2-results.png" width="260" alt="Results: direct trip compared with the best alternative">
+  <img src="docs/screenshots/2-results.png" width="260" alt="Results: here no nearby point saves enough, so the app says the direct trip is best">
   &nbsp;
-  <img src="docs/screenshots/3-detail.png" width="260" alt="Option detail: walk and drive legs on the map">
+  <img src="docs/screenshots/3-detail.png" width="260" alt="Detail: route on the map, verified a minute ago, numbers up front">
 </p>
 
 <p align="center">
-  <sub><b>Plan</b>: map with a bottom sheet, frequent places and walking chips &nbsp;·&nbsp; <b>Results</b>: the saving first, landmark directions, mini map &nbsp;·&nbsp; <b>Detail</b>: verified numbers, Book and Start walking</sub>
+  <sub><b>Plan</b>: one search button, options folded into a one-line summary &nbsp;·&nbsp; <b>Results</b>: an honest "the direct trip is best" when walking doesn't pay &nbsp;·&nbsp; <b>Detail</b>: when the route was verified, numbers before the fine print</sub>
 </p>
 
 ## Features
 
-- **Savings first**: each alternative leads with one sentence ("وفّر 8 دقائق: امشِ 3 د إلى أمام صيدلية X") and a mini map of the direct vs. alternative route. The detailed numbers are one tap away.
+- **Savings first, trade-offs included**: each alternative leads with its saving and anything it costs you ("أرخص بـ 0.30 د.أ · أبطأ بـ 4 دقائق"), one sentence of directions ("امشِ 3 دقائق إلى أمام صيدلية X") and a mini map of the direct vs. alternative route.
 - **Verified before shown**: the best alternatives and the direct trip are re-checked with a detailed traffic-aware route. If the saving disappears, the alternative is dropped, so the results and detail screens never contradict each other.
-- **Only worthwhile deals**: an alternative must save at least 3 minutes (or 10%), and walking must cost less than the time it saves.
-- **Book in one tap**: Uber opens with pickup and dropoff pre-filled; for Careem and Jeeny the pickup address is copied and the app opens. "ابدأ المشي" starts Google Maps walking navigation to the pickup.
+- **Only worthwhile deals**: an alternative must save at least 3 minutes (or 10%) and walking must cost less than the drive time it saves; when you'd rather pay less, it must save at least 0.25 JD (or 10%) on the estimated fare.
+- **Book in one tap**: Uber opens with pickup and dropoff pre-filled; for Careem and Jeeny the pickup landmark name (or coordinates for unnamed points) is copied so their search can find it, and the app opens. "ابدأ المشي" starts Google Maps walking navigation to the pickup.
 - **Share from Google Maps**: share any place to Khatwa (or open a `geo:` / Maps link) and it searches from your current location right away.
-- **Frequent trips**: Home / Work / University shortcuts, a home-screen widget and a Quick Settings tile.
+- **Frequent trips**: Home / Work / University shortcuts, a home-screen widget and a Quick Settings tile. The widget shows the last answer for each place ("إلى الجامعة · امشِ 3 د ووفّر 6 د").
 - **Landmark directions**: suggested points are described by the nearest landmark and street, not compass bearings.
 - **Amman-aware walking**: uphill walks get a climb penalty (Elevation API), and an optional "no walking after sunset" mode.
 - **Fare estimate**: a rough fare for each option, so you can see the time vs. money trade-off.
@@ -51,7 +51,7 @@ The UI is in Arabic (RTL), and the walking heuristics are tuned for Amman's hill
 - **Result cache**: repeated trips at the same hour reuse a recent result without spending quota.
 - **Pick start and destination** by tapping the map, searching places, or using your current location.
 - **Walking limits**: preset chips for before pickup and after dropoff (none, 2, 5 or 10 min).
-- **Three ranking goals**: total trip time (walk + drive), drive time only, or drive distance only.
+- **Two goals**: "أصل أسرع" (least total time, walk + drive) or "أدفع أقل" (lowest estimated fare).
 - **Honest comparison**: every alternative is shown next to the direct door-to-door trip, with the difference in total time, drive time, distance and walking. Options that are worse on every metric are dropped.
 - **Traffic-aware**: drive times use live traffic, departing when you'd actually reach the pickup point.
 - **Saved points**: keep your own reviewed pickup/dropoff spots with road side and a nearby landmark. When you have none, the app suggests points on nearby roads automatically.
@@ -64,7 +64,7 @@ The UI is in Arabic (RTL), and the walking heuristics are tuned for Amman's hill
 1. Up to 5 candidate points per side are picked: the exact start/destination, then your saved points nearest-first, then auto-suggested points snapped to roads (Roads API) in rings around you.
 2. Walking times to each candidate come from the Routes API walk matrix. Candidates over your walking limit are dropped before any drive elements are requested.
 3. A traffic-aware drive matrix covers every remaining pickup × dropoff pair.
-4. [`Engine.rank`](app/src/main/java/com/haithamassoli/khatwa/Engine.kt) keeps only the Pareto-optimal pairs that beat the direct trip by the minimum saving on your chosen goal, and returns the top 3.
+4. [`Engine.rank`](app/src/main/java/com/haithamassoli/khatwa/Engine.kt) keeps only the Pareto-optimal pairs that beat the direct trip by the minimum saving on your chosen goal (time, or estimated fare), and returns the top 3.
 5. The direct trip and the top alternatives get a detailed traffic-aware route. Alternatives whose saving no longer clears the threshold are dropped.
 6. Auto-suggested points in the final list are named after the nearest landmark (Places API) and street.
 

@@ -199,6 +199,9 @@ class IncomingLinksTest {
         assertTrue(q.contains("dropoff%5Blatitude%5D=31.980000"))
     }
 
-    @Test fun clipText() = assertEquals("مكة مول 31.950000,35.910000 https://maps.google.com/?q=31.950000,35.910000",
-        Integrations.pickupClipText(Pt(31.95, 35.91), "مكة مول"))
+    @Test fun clipText() {
+        assertEquals("مكة مول", Integrations.pickupClipText(Pt(31.95, 35.91), "مكة مول"))
+        assertEquals("صيدلية الشفاء", Integrations.pickupClipText(Pt(31.95, 35.91), "أمام صيدلية الشفاء"))
+        assertEquals("31.950000,35.910000", Integrations.pickupClipText(Pt(31.95, 35.91), "نقطة مقترحة · 120 م شمال"))
+    }
 }

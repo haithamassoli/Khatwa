@@ -10,7 +10,7 @@ import java.time.ZonedDateTime
 class ResultCacheTest {
     private val o = Pt(31.95123, 35.91234)
     private val d = Pt(31.99001, 35.87002)
-    private val input = SearchInput(o, d, 300, 240, Objective.DRIVE_TIME)
+    private val input = SearchInput(o, d, 300, 240, Objective.CHEAPEST)
 
     private fun result(): SearchResult {
         val p = Candidate("auto-1", Pt(31.95201, 35.91301), "أمام صيدلية الشفاء", landmark = "صيدلية الشفاء", street = "شارع الجامعة",
@@ -59,7 +59,7 @@ class ResultCacheTest {
         assertNotEquals(k, ResultCache.key(input, at(2026, 10, 11, 9, 5)))
         assertNotEquals(k, ResultCache.key(input, at(2026, 10, 16, 8, 5))) // Friday = weekend
         assertNotEquals(k, ResultCache.key(input.copy(maxWalkEndS = 300), at(2026, 10, 11, 8, 5)))
-        assertNotEquals(k, ResultCache.key(input.copy(objective = Objective.MODELED), at(2026, 10, 11, 8, 5)))
+        assertNotEquals(k, ResultCache.key(input.copy(objective = Objective.FASTEST), at(2026, 10, 11, 8, 5)))
         assertNotEquals(k, ResultCache.key(input.copy(destination = Pt(31.992, 35.87002)), at(2026, 10, 11, 8, 5)))
     }
 }

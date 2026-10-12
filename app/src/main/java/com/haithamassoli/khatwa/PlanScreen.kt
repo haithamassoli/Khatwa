@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.School
@@ -74,7 +75,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -126,7 +128,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
@@ -226,6 +227,11 @@ fun PlanScreen(vm: MainViewModel) {
         }
     }
 
+    // Most trips start where the user is standing: fill the start without asking when the permission is already there.
+    LaunchedEffect(Unit) {
+        if (vm.plan.origin == null && !vm.pendingAutoSearch && hasLocationPermission(context)) locate()
+    }
+
     LaunchedEffect(sheetState.currentValue) {
         if (sheetState.currentValue == SheetValue.PartiallyExpanded) sheetScroll.animateScrollTo(0)
     }
@@ -322,14 +328,9 @@ fun PlanScreen(vm: MainViewModel) {
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         HorizontalDivider()
-                        Text("أقصى وقت مشي", style = MaterialTheme.typography.titleMedium)
-                        WalkPresetRow("قبل الركوب", plan.maxWalkStartS, enabled = !nightNow, onChange = vm::setWalkStart)
-                        WalkPresetRow("بعد النزول", plan.maxWalkEndS, enabled = !nightNow, onChange = vm::setWalkEnd)
-
-                        HorizontalDivider()
                         ListItem(
-                            headlineContent = { Text("خيارات") },
-                            supportingContent = { Text(objectiveLabel(plan.objective)) },
+                            headlineContent = { Text("خيارات البحث") },
+                            supportingContent = { Text(optionsSummary(plan, nightNow)) },
                             leadingContent = { Icon(Icons.Filled.Tune, contentDescription = null) },
                             trailingContent = {
                                 Icon(if (showOptions) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = if (showOptions) "إخفاء الخيارات" else "عرض الخيارات")
@@ -339,22 +340,12 @@ fun PlanScreen(vm: MainViewModel) {
                         )
                         AnimatedVisibility(showOptions) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("الأولوية", style = MaterialTheme.typography.labelLarge)
-                                ObjectiveChips(plan.objective, vm::setObjective)
-                                val activePoints = candidates.count { it.enabled && it.verification != Verification.REPORTED }
-                                Text(
-                                    "النقاط المحفوظة المفعّلة: $activePoints",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                Text("الأهم عندي", style = MaterialTheme.typography.labelLarge)
+                                ObjectiveChoice(plan.objective, vm::setObjective)
+                                Text("أقصى وقت مشي", style = MaterialTheme.typography.labelLarge)
+                                WalkPresetRow("قبل الركوب", plan.maxWalkStartS, enabled = !nightNow, onChange = vm::setWalkStart)
+                                WalkPresetRow("بعد النزول", plan.maxWalkEndS, enabled = !nightNow, onChange = vm::setWalkEnd)
                             }
-                        }
-                        if (plan.origin != null || plan.destination != null) {
-                            Text(
-                                "للتعديل الدقيق: اضغط مطولاً على العلامة في الخريطة واسحبها.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
                         }
                     }
                 }
@@ -389,9 +380,11 @@ fun PlanScreen(vm: MainViewModel) {
                             }
                         }
                         Spacer(Modifier.weight(1f))
-                        MapButton(Icons.AutoMirrored.Filled.ListAlt, "نقاطي") { vm.go(Screen.POINTS) }
-                        MapButton(Icons.Filled.History, "السجل") { vm.go(Screen.HISTORY) }
-                        MapButton(Icons.Filled.Settings, "الإعدادات") { showSettings = true }
+                        AppMenu(
+                            onPoints = { vm.go(Screen.POINTS) },
+                            onHistory = { vm.go(Screen.HISTORY) },
+                            onSettings = { showSettings = true },
+                        )
                     }
                     Surface(shape = RoundedCornerShape(24.dp), tonalElevation = 3.dp, shadowElevation = 3.dp) {
                         Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -442,9 +435,25 @@ private val START_COLOR = Color(0xFF2E7D32)
 private val END_COLOR = Color(0xFFC62828)
 
 @Composable
-private fun MapButton(icon: ImageVector, description: String, onClick: () -> Unit) {
-    Surface(shape = CircleShape, shadowElevation = 3.dp) {
-        IconButton(onClick = onClick) { Icon(icon, contentDescription = description) }
+private fun AppMenu(onPoints: () -> Unit, onHistory: () -> Unit, onSettings: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Surface(shape = CircleShape, shadowElevation = 3.dp) {
+            IconButton(onClick = { open = true }) { Icon(Icons.Filled.Menu, contentDescription = "القائمة") }
+        }
+        DropdownMenu(open, onDismissRequest = { open = false }) {
+            listOf(
+                Triple("نقاط الركوب المحفوظة", Icons.AutoMirrored.Filled.ListAlt, onPoints),
+                Triple("سجل الأسعار", Icons.Filled.History, onHistory),
+                Triple("الإعدادات", Icons.Filled.Settings, onSettings),
+            ).forEach { (label, icon, action) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    leadingIcon = { Icon(icon, contentDescription = null) },
+                    onClick = { open = false; action() },
+                )
+            }
+        }
     }
 }
 
@@ -458,8 +467,8 @@ private fun PlanMap(vm: MainViewModel, camera: CameraPositionState, candidates: 
         onMapClick = { onTap(Pt(it.latitude, it.longitude)) },
         contentPadding = contentPadding,
     ) {
-        val activeIcon = remember { planDotIcon(0xFF1565C0.toInt()) }
-        val offIcon = remember { planDotIcon(0xFF9E9E9E.toInt()) }
+        val activeIcon = remember { dotIcon(0xFF1565C0.toInt()) }
+        val offIcon = remember { dotIcon(0xFF9E9E9E.toInt()) }
         candidates.forEach { c ->
             val off = !c.enabled || c.verification == Verification.REPORTED
             val statusLabel = when {
@@ -505,19 +514,6 @@ private fun PlanDraggableMarker(pt: Pt, title: String, name: String, hue: Float,
     )
 }
 
-/** Small round marker for saved points. Must be called after the map is initialized. */
-private fun planDotIcon(color: Int): BitmapDescriptor {
-    val size = 40
-    val bmp = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
-    val canvas = android.graphics.Canvas(bmp)
-    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-    paint.color = android.graphics.Color.WHITE
-    canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
-    paint.color = color
-    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 6f, paint)
-    return BitmapDescriptorFactory.fromBitmap(bmp)
-}
-
 @Composable
 private fun PlaceField(
     vm: MainViewModel,
@@ -533,7 +529,7 @@ private fun PlaceField(
     val shown = when {
         pt == null -> ""
         name.isNotBlank() -> name
-        else -> "نقطة على الخريطة (%.5f، %.5f)".format(pt.lat, pt.lng)
+        else -> "نقطة على الخريطة"
     }
     var query by remember { mutableStateOf(shown) }
     var typing by remember { mutableStateOf(false) }
@@ -789,17 +785,28 @@ private fun WalkPresetRow(label: String, valueS: Int, enabled: Boolean, onChange
 }
 
 private fun objectiveLabel(o: Objective) = when (o) {
-    Objective.MODELED -> "أقل مشي وقيادة"
-    Objective.DRIVE_TIME -> "أقل وقت سيارة"
-    Objective.DRIVE_DISTANCE -> "أقل مسافة سيارة"
+    Objective.FASTEST -> "أصل أسرع"
+    Objective.CHEAPEST -> "أدفع أقل"
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/** "أصل أسرع · مشي حتى 5 د": what the search will do, without opening the options. */
+private fun optionsSummary(plan: PlanState, night: Boolean): String {
+    val walk = when {
+        night -> "بلا مشي بعد المغرب"
+        plan.maxWalkStartS == 0 && plan.maxWalkEndS == 0 -> "بلا مشي"
+        plan.maxWalkStartS == plan.maxWalkEndS -> "مشي حتى ${fmtDuration(plan.maxWalkStartS)}"
+        else -> "مشي حتى ${fmtDuration(plan.maxWalkStartS)} قبل و${fmtDuration(plan.maxWalkEndS)} بعد"
+    }
+    return "${objectiveLabel(plan.objective)} · $walk"
+}
+
 @Composable
-private fun ObjectiveChips(selected: Objective, onSelect: (Objective) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Objective.entries.forEach { o ->
-            FilterChip(selected = selected == o, onClick = { onSelect(o) }, label = { Text(objectiveLabel(o)) })
+private fun ObjectiveChoice(selected: Objective, onSelect: (Objective) -> Unit) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        Objective.entries.forEachIndexed { i, o ->
+            SegmentedButton(selected == o, { onSelect(o) }, SegmentedButtonDefaults.itemShape(i, Objective.entries.size)) {
+                Text(objectiveLabel(o))
+            }
         }
     }
 }
@@ -863,13 +870,9 @@ private fun SearchActions(vm: MainViewModel, status: SearchStatus, plan: PlanSta
                     Text("حاول مرة أخرى")
                 }
             }
-            is SearchStatus.Done -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { vm.go(Screen.RESULTS) }, modifier = Modifier.weight(1f).height(52.dp)) {
-                    Text("عرض النتائج")
-                }
-                OutlinedButton(onClick = { vm.search(force = true) }, enabled = !quotaFull, modifier = Modifier.height(52.dp)) {
-                    Text("ابحث مجدداً")
-                }
+            // Refreshing lives on the results screen; one button here.
+            is SearchStatus.Done -> Button(onClick = { vm.go(Screen.RESULTS) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                Text("عرض النتائج")
             }
             SearchStatus.Idle -> {
                 Button(onClick = { vm.search() }, enabled = ready && !quotaFull, modifier = Modifier.fillMaxWidth().height(52.dp)) {

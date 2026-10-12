@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.LocalTaxi
 import androidx.compose.material.icons.outlined.NightsStay
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.Button
@@ -37,8 +38,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -46,7 +45,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,7 +53,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 
 // OWNER: UI-B agent.
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,10 +60,6 @@ import kotlinx.coroutines.launch
 fun ResultsScreen(vm: MainViewModel) {
     val status = vm.status
     val loading = status is SearchStatus.Loading
-    val snackbar = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
-    var keep by remember { mutableStateOf<Candidate?>(null) }
-    var saved by remember { mutableStateOf(setOf<String>()) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -85,7 +78,6 @@ fun ResultsScreen(vm: MainViewModel) {
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
     ) { inner ->
         if (status !is SearchStatus.Done) {
             Column(
@@ -118,7 +110,6 @@ fun ResultsScreen(vm: MainViewModel) {
         val base = r.baseline
         val objective = r.input.objective
         val best = r.alternatives.firstOrNull()
-        val onKeep: (Candidate) -> Unit = { keep = it }
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -133,12 +124,18 @@ fun ResultsScreen(vm: MainViewModel) {
                     .let { if (shown == base && it.drive.isEmpty()) it.copy(drive = r.baselinePolyline) else it }
                 if (data.points.size >= 2) item(key = "map") { ResultsMap(vm, data, shown == base) }
             }
+            if (best != null && base != null) item(key = "direct") {
+                InfoLine(
+                    Icons.Outlined.LocalTaxi,
+                    listOfNotNull("المباشر من الباب: ${fmtDuration(base.modeledS)}", base.fareJod?.let { "~${fmtJod(it)}" }).joinToString(" · "),
+                )
+            }
             item(key = "notices") { Notices(vm, r) }
             if (best == null) {
                 item(key = "empty") { EmptyState(vm, base) }
             } else {
                 itemsIndexed(r.alternatives) { i, alt ->
-                    AlternativeCard(vm, alt, base, objective, best = i == 0 && r.alternatives.size > 1, saved = saved, onKeep = onKeep)
+                    AlternativeCard(vm, alt, base, objective, best = i == 0 && r.alternatives.size > 1)
                 }
                 item(key = "baseline") {
                     if (base != null) BaselineCard(vm, base)
@@ -147,19 +144,6 @@ fun ResultsScreen(vm: MainViewModel) {
             }
             item(key = "footer") { Footer(r) }
         }
-    }
-
-    keep?.let { c ->
-        KeepPointDialog(
-            c = c,
-            onDismiss = { keep = null },
-            onSave = { name, side ->
-                vm.keepAutoPoint(c, name, side)
-                saved = saved + c.id
-                keep = null
-                scope.launch { snackbar.showSnackbar("حُفظت النقطة وستظهر في بحثك القادم") }
-            },
-        )
     }
 }
 
@@ -205,7 +189,9 @@ private fun Notices(vm: MainViewModel, r: SearchResult) {
                 else "استبعدنا ${r.droppedAfterCheck} بدائل لأن التوفير اختفى عند التحقق من المسار الفعلي",
             )
         }
-        cleanWarnings(r.warnings).forEach { InfoLine(Icons.Outlined.Info, it) }
+        // "…الرحلة المباشرة هي الأفضل" repeats the empty-state card right below it.
+        cleanWarnings(r.warnings).filterNot { r.alternatives.isEmpty() && r.baseline != null && "المباشرة هي الأفضل" in it }
+            .forEach { InfoLine(Icons.Outlined.Info, it) }
     }
 }
 
@@ -216,8 +202,6 @@ private fun AlternativeCard(
     base: RouteOption?,
     objective: Objective,
     best: Boolean,
-    saved: Set<String>,
-    onKeep: (Candidate) -> Unit,
 ) {
     var expanded by rememberSaveable(o.pickup.id, o.dropoff.id) { mutableStateOf(false) }
     Card(
@@ -228,14 +212,15 @@ private fun AlternativeCard(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (best) StatusChip(Icons.Outlined.CheckCircle, "الأفضل")
             OptionSummary(o, base, objective)
-            PointLines(o, saved, onKeep)
             Column {
                 ExpandToggle(expanded, "عرض الأرقام", "إخفاء الأرقام") { expanded = !expanded }
                 AnimatedVisibility(expanded) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         HorizontalDivider()
                         OptionNumbers(o, base)
-                        if (o.verified) InfoLine(Icons.Outlined.Verified, "✓ تم التحقق من المسار الفعلي", color = MaterialTheme.colorScheme.primary)
+                        (vm.status as? SearchStatus.Done)?.result?.takeIf { o.verified }?.let {
+                            InfoLine(Icons.Outlined.Verified, verifiedText(it), color = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
             }

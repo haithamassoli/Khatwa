@@ -15,3 +15,6 @@ object Fare {
         return (maxOf(MIN_JOD, raw) * 20).roundToInt() / 20.0
     }
 }
+
+/** Fare for ranking and headlines: the priced value, or the estimate before pricing. */
+fun RouteOption.fare(): Double = fareJod ?: Fare.estimateJod(driveM, driveS)

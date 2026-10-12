@@ -39,7 +39,7 @@ class TripWidget : AppWidgetProvider() {
                 if (p == null) rv.setViewVisibility(id, View.GONE)
                 else {
                     rv.setViewVisibility(id, View.VISIBLE)
-                    rv.setTextViewText(id, TripLaunch.label(p))
+                    rv.setTextViewText(id, TripLaunch.widgetLabel(p))
                     rv.setOnClickPendingIntent(id, activity(context, p.id))
                 }
             }

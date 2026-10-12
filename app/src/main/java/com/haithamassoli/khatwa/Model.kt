@@ -5,7 +5,8 @@ package com.haithamassoli.khatwa
 
 data class Pt(val lat: Double, val lng: Double)
 
-enum class Objective { MODELED, DRIVE_TIME, DRIVE_DISTANCE }
+/** FASTEST: least total time (walk + drive). CHEAPEST: lowest estimated fare. */
+enum class Objective { FASTEST, CHEAPEST }
 
 enum class Verification { VERIFIED, UNVERIFIED, REPORTED }
 
@@ -32,7 +33,7 @@ data class SearchInput(
     val destination: Pt,
     val maxWalkStartS: Int = 600, // 0..600
     val maxWalkEndS: Int = 600,   // 0..600
-    val objective: Objective = Objective.MODELED,
+    val objective: Objective = Objective.FASTEST,
 )
 
 data class RouteOption(
@@ -61,7 +62,10 @@ enum class RideApp { UBER, CAREEM, JEENY }
 enum class PlaceKind { HOME, WORK, UNIVERSITY, OTHER }
 
 /** A frequent place shortcut on the plan screen. */
-data class SavedPlace(val id: String, val kind: PlaceKind, val name: String, val pt: Pt)
+data class SavedPlace(
+    val id: String, val kind: PlaceKind, val name: String, val pt: Pt,
+    val tip: String = "", // result of the last search to this place, shown on the widget ("امشِ 3 د ووفّر 6 د")
+)
 
 data class Settings(
     val onboarded: Boolean = false,

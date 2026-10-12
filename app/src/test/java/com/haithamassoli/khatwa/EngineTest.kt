@@ -141,7 +141,7 @@ class EngineTest {
             listOf(directP to null, c("A") to 300),
             listOf(directQ to null),
             listOf(listOf(leg(1800, 9000)), listOf(leg(1600, 5000))),
-            SearchInput(o, d, objective = Objective.DRIVE_DISTANCE),
+            SearchInput(o, d, objective = Objective.CHEAPEST),
         )
         assertEquals(1, r2.alternatives.size)
     }
@@ -153,8 +153,9 @@ class EngineTest {
         val r = rank(ps, listOf(directQ to null), drives)
         assertEquals(3, r.alternatives.size)
         assertEquals(listOf("P1", "P2", "P3"), r.alternatives.map { it.pickup.id })
-        val r2 = rank(ps, listOf(directQ to null), drives, SearchInput(o, d, objective = Objective.DRIVE_TIME))
-        assertEquals(listOf("P5", "P4", "P3"), r2.alternatives.map { it.pickup.id })
+        // Fares 2.65, 2.65, 2.60, 2.55, 2.55: cheapest first, ties by total time.
+        val r2 = rank(ps, listOf(directQ to null), drives, SearchInput(o, d, objective = Objective.CHEAPEST))
+        assertEquals(listOf("P4", "P5", "P3"), r2.alternatives.map { it.pickup.id })
     }
 
     @Test fun noValidOptionWarns() {
@@ -167,9 +168,8 @@ class EngineTest {
     @Test fun comparatorTieBreaks() {
         val a = RouteOption(directP, directQ, 100, 1000, 5000, 0)
         val b = RouteOption(directP, directQ, 0, 1100, 4000, 0) // same modeled, less walk
-        assertTrue(Engine.comparator(Objective.MODELED).compare(b, a) < 0)
-        assertTrue(Engine.comparator(Objective.DRIVE_TIME).compare(a, b) < 0)
-        assertTrue(Engine.comparator(Objective.DRIVE_DISTANCE).compare(b, a) < 0)
+        assertTrue(Engine.comparator(Objective.FASTEST).compare(b, a) < 0)
+        assertTrue(Engine.comparator(Objective.CHEAPEST).compare(b, a) < 0) // 2.15 vs 2.35 د.أ
     }
 
     @Test fun savingBelowFloorRejected() {
@@ -187,21 +187,21 @@ class EngineTest {
         assertEquals(1, rank(ps, listOf(directQ to null), listOf(listOf(leg(3600)), listOf(leg(3200)))).alternatives.size)
     }
 
-    @Test fun distanceThreshold() {
-        val input = SearchInput(o, d, objective = Objective.DRIVE_DISTANCE)
+    @Test fun fareThreshold() {
+        val input = SearchInput(o, d, objective = Objective.CHEAPEST)
         val ps = listOf(directP to null, c("P") to 100)
-        // Baseline 2000 m: floor 300 m wins over 10% (200 m).
-        assertTrue(rank(ps, listOf(directQ to null), listOf(listOf(leg(900, 2000)), listOf(leg(900, 1750))), input).alternatives.isEmpty())
-        assertEquals(1, rank(ps, listOf(directQ to null), listOf(listOf(leg(900, 2000)), listOf(leg(900, 1700))), input).alternatives.size)
-        val r = rank(ps, listOf(directQ to null), listOf(listOf(leg(900, 2000)), listOf(leg(900, 1900))), input)
-        assertTrue(r.warnings.any { "300 م" in it })
+        // Baseline 1.50 د.أ: the 0.25 floor wins over 10%. 1.35 saves 0.15 (no deal), 1.20 saves 0.30.
+        val r = rank(ps, listOf(directQ to null), listOf(listOf(leg(900, 2000)), listOf(leg(900, 1500))), input)
+        assertTrue(r.alternatives.isEmpty())
+        assertTrue(r.warnings.any { "0.25 د.أ" in it })
+        assertEquals(1, rank(ps, listOf(directQ to null), listOf(listOf(leg(900, 2000)), listOf(leg(900, 1000))), input).alternatives.size)
     }
 
     @Test fun walkLongerThanDriveSavedIsNoDeal() {
         val base = RouteOption(directP, directQ, 0, 1500, 9000, 0)
         val alt = RouteOption(c("P"), directQ, 300, 1300, 8000, 0) // walk 5 min to save 3 min of driving
-        assertFalse(Engine.worthIt(Objective.MODELED, base, alt))
-        assertTrue(Engine.worthIt(Objective.DRIVE_TIME, base.copy(driveS = 1600), alt)) // drive-time objective ignores walking
+        assertFalse(Engine.worthIt(Objective.FASTEST, base, alt))
+        assertTrue(Engine.worthIt(Objective.CHEAPEST, base.copy(driveS = 1600), alt)) // the fare goal ignores walking
     }
 
     @Test fun climbAnnotated() {
@@ -221,7 +221,7 @@ class EngineTest {
         // Matrix said 31 vs 39 min; the detailed route says 39 for both.
         val base = verified(RouteOption(directP, directQ, 0, 2340, 9000, 0), 2340)
         val alt = verified(RouteOption(c("P"), directQ, 120, 1860, 8000, 0), 2340)
-        val r = Engine.recheck(Objective.MODELED, base, listOf(alt))
+        val r = Engine.recheck(Objective.FASTEST, base, listOf(alt))
         assertTrue(r.alternatives.isEmpty())
         assertEquals(1, r.dropped)
         assertTrue(r.warnings.single().startsWith("تراجع التوفير بعد التحقق من المسار الفعلي، فاستُبعد بديل"))
@@ -230,7 +230,7 @@ class EngineTest {
     @Test fun recheckWarnsWhenSavingShrinks() {
         val base = verified(RouteOption(directP, directQ, 0, 2340, 9000, 0), 2340)
         val alt = verified(RouteOption(c("P"), directQ, 60, 1500, 8000, 0), 2040) // 780 s -> 240 s
-        val r = Engine.recheck(Objective.MODELED, base, listOf(alt))
+        val r = Engine.recheck(Objective.FASTEST, base, listOf(alt))
         assertEquals(1, r.alternatives.size)
         assertEquals(0, r.dropped)
         assertEquals(listOf("التوفير تراجع إلى 4 د بسبب الزحمة"), r.warnings)
@@ -240,9 +240,9 @@ class EngineTest {
         val base = verified(RouteOption(directP, directQ, 0, 2340, 9000, 0), 2400)
         val a = verified(RouteOption(c("A"), directQ, 60, 1500, 8000, 0), 1530)
         val b = verified(RouteOption(c("B"), directQ, 30, 1600, 8000, 0), 1700)
-        val r = Engine.recheck(Objective.MODELED, base, listOf(b, a))
+        val r = Engine.recheck(Objective.FASTEST, base, listOf(b, a))
         assertEquals(listOf("A", "B"), r.alternatives.map { it.pickup.id })
         assertTrue(r.warnings.isEmpty())
-        assertEquals(listOf(b, a).sortedBy { it.modeledS }, Engine.recheck(Objective.MODELED, null, listOf(b, a)).alternatives)
+        assertEquals(listOf(b, a).sortedBy { it.modeledS }, Engine.recheck(Objective.FASTEST, null, listOf(b, a)).alternatives)
     }
 }

@@ -2,6 +2,7 @@ package com.haithamassoli.khatwa
 
 import android.annotation.SuppressLint
 import android.app.Application
+import android.location.LocationManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -31,7 +32,7 @@ data class PlanState(
     val destinationName: String = "",
     val maxWalkStartS: Int = 300,
     val maxWalkEndS: Int = 300,
-    val objective: Objective = Objective.MODELED,
+    val objective: Objective = Objective.FASTEST,
 )
 
 // Shared UI contract. UI agents read state and call methods; don't add screens' private state here.
@@ -81,7 +82,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         status = SearchStatus.Idle
     }
 
-    fun setOrigin(pt: Pt, name: String = "") { edit { it.copy(origin = pt, originName = name) }; if (name.isEmpty()) nameLater(pt, true) }
+    fun setOrigin(pt: Pt, name: String = "") { locationMessage = null; edit { it.copy(origin = pt, originName = name) }; if (name.isEmpty()) nameLater(pt, true) }
     fun setDestination(pt: Pt, name: String = "") { edit { it.copy(destination = pt, destinationName = name) }; if (name.isEmpty()) nameLater(pt, false) }
     fun swap() = edit { it.copy(origin = it.destination, originName = it.destinationName, destination = it.origin, destinationName = it.originName) }
     fun setWalkStart(s: Int) = edit { it.copy(maxWalkStartS = s.coerceIn(0, 600)) }
@@ -103,7 +104,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             LocationServices.getFusedLocationProviderClient(getApplication<Application>())
                 .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).await()
         }.getOrNull()
-        if (loc == null) { locationMessage = "تعذر تحديد الموقع. اختر نقطة البداية على الخريطة."; return@launch }
+        if (loc == null) {
+            val off = getApplication<Application>().getSystemService(LocationManager::class.java)?.isLocationEnabled == false
+            locationMessage = if (off) "الموقع متوقف في إعدادات الجهاز. شغّله أو اختر البداية على الخريطة."
+            else "تعذر تحديد الموقع. اختر نقطة البداية على الخريطة."
+            return@launch
+        }
         setOrigin(Pt(loc.latitude, loc.longitude))
         if (loc.accuracy > 50f) locationMessage = "دقة الموقع ضعيفة (±${loc.accuracy.toInt()} م). تأكد من النقطة على الخريطة أو اسحبها."
     }
@@ -133,7 +139,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (id != requestId) return@launch // stale response (PRD §10)
             status = next
-            if (next is SearchStatus.Done) screen = Screen.RESULTS
+            if (next is SearchStatus.Done) { screen = Screen.RESULTS; rememberTip(next.result) }
         }
     }
 
@@ -180,6 +186,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun startTrip(to: SavedPlace, from: SavedPlace? = null) {
         if (from != null) setOrigin(from.pt, from.name)
         applySharedDestination(to.pt, to.name)
+    }
+
+    /**
+     * Keeps the answer for a saved destination so the widget can show it next time.
+     * ponytail: refreshed only by the user's own searches; a background refresh would cost quota on every run.
+     */
+    private fun rememberTip(r: SearchResult) {
+        val tip = widgetTip(r).ifEmpty { return }
+        val p = store.places.value.firstOrNull { Searcher.distanceM(it.pt, r.input.destination) <= 150 } ?: return
+        if (p.tip != tip) savePlace(p.copy(tip = tip))
     }
 
     // Saved places & settings

@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.Dot
 import com.google.android.gms.maps.model.Gap
@@ -113,23 +114,44 @@ internal fun RouteMap(
         if (data.drive.size > 1) Polyline(data.drive.map { it.ll() }, color = MapDriveColor, width = DriveWidth)
         if (data.walkStart.size > 1) Polyline(data.walkStart.map { it.ll() }, color = MapWalkColor, width = WalkWidth, pattern = dotted)
         if (data.walkEnd.size > 1) Polyline(data.walkEnd.map { it.ll() }, color = MapWalkColor, width = WalkWidth, pattern = dotted)
-        Marker(
+        // Pins mark where to get in / out; the start and destination become small dots once walking is involved.
+        val startDot = remember { dotIcon(0xFF2E7D32.toInt()) }
+        val endDot = remember { dotIcon(0xFFC62828.toInt()) }
+        val center = androidx.compose.ui.geometry.Offset(0.5f, 0.5f)
+        if (data.pickup.isDirect) Marker(
             state = rememberUpdatedMarkerState(data.origin.ll()), title = "البداية",
             icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN),
-        )
-        if (!data.pickup.isDirect) Marker(
-            state = rememberUpdatedMarkerState(data.pickup.pt.ll()), title = "الركوب: ${data.pickup.name}",
-            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE),
-        )
-        if (!data.dropoff.isDirect) Marker(
-            state = rememberUpdatedMarkerState(data.dropoff.pt.ll()), title = "النزول: ${data.dropoff.name}",
-            icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE),
-        )
-        Marker(
+        ) else {
+            Marker(state = rememberUpdatedMarkerState(data.origin.ll()), title = "البداية", icon = startDot, anchor = center)
+            Marker(
+                state = rememberUpdatedMarkerState(data.pickup.pt.ll()), title = "الركوب: ${data.pickup.name}",
+                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN), zIndex = 1f,
+            )
+        }
+        if (data.dropoff.isDirect) Marker(
             state = rememberUpdatedMarkerState(data.destination.ll()), title = "الوجهة",
             icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED),
-        )
+        ) else {
+            Marker(state = rememberUpdatedMarkerState(data.destination.ll()), title = "الوجهة", icon = endDot, anchor = center)
+            Marker(
+                state = rememberUpdatedMarkerState(data.dropoff.pt.ll()), title = "النزول: ${data.dropoff.name}",
+                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED), zIndex = 1f,
+            )
+        }
     }
+}
+
+/** Small round marker. Must be called after the map is initialized (inside GoogleMap content). */
+internal fun dotIcon(color: Int): BitmapDescriptor {
+    val size = 40
+    val bmp = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    paint.color = android.graphics.Color.WHITE
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
+    paint.color = color
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 6f, paint)
+    return BitmapDescriptorFactory.fromBitmap(bmp)
 }
 
 data class LegendLine(val label: String, val color: Color, val widthPx: Float, val dotted: Boolean)

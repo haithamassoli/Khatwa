@@ -23,11 +23,19 @@ class FormatTest {
         assertEquals("11 دقيقة", fmtMinutesAr(660))
     }
 
-    @Test fun headlineByObjective() {
-        assertEquals("وفّر 3 دقائق", savingTitle(alt, base, Objective.MODELED))
-        assertEquals("وفّر 8 دقائق بالسيارة", savingTitle(alt, base, Objective.DRIVE_TIME))
-        assertEquals("مسافة أطول بـ 1.0 كم", savingTitle(alt, base, Objective.DRIVE_DISTANCE))
-        assertEquals("مسافة أقصر بـ 1.2 كم", savingTitle(alt.copy(driveM = 6100), base, Objective.DRIVE_DISTANCE))
+    @Test fun headlineNamesTheTradeOff() {
+        val b = base.copy(fareJod = 2.5)
+        assertEquals("وفّر 3 دقائق", savingTitle(alt.copy(fareJod = 2.5), b, Objective.FASTEST))
+        assertEquals("وفّر 3 دقائق · أغلى بـ 0.50 د.أ", savingTitle(alt.copy(fareJod = 3.0), b, Objective.FASTEST))
+        assertEquals("أرخص بـ 0.50 د.أ", savingTitle(alt.copy(fareJod = 2.0), b, Objective.CHEAPEST))
+        // Cheaper but slower: the loss is in the headline, not hidden in the numbers.
+        assertEquals("أرخص بـ 0.50 د.أ · أبطأ بـ 4 دقائق", savingTitle(alt.copy(fareJod = 2.0, walkStartS = 600), b, Objective.CHEAPEST))
+    }
+
+    @Test fun widgetTipFromResult() {
+        val r = SearchResult(1, SearchInput(origin, dest), base.copy(fareJod = 2.5), listOf(alt), emptyList(), true, 0, 1, 0, 1)
+        assertEquals("امشِ 5 د ووفّر 3 د", widgetTip(r))
+        assertEquals("المباشر أفضل", widgetTip(r.copy(alternatives = emptyList())))
     }
 
     @Test fun sentence() {
@@ -54,9 +62,9 @@ class FormatTest {
 
     @Test fun mismatchWarnsWhenSavingDisappears() {
         val d = OptionDetail(emptyList(), emptyList(), emptyList(), 180, 39 * 60, 120)
-        val w = detailMismatch(alt, base, Objective.MODELED, d)
+        val w = detailMismatch(alt, base, d)
         assertTrue(w!!.contains("اختفى"))
-        assertNull(detailMismatch(alt, base, Objective.MODELED, d.copy(driveS = 31 * 60 + 20)))
+        assertNull(detailMismatch(alt, base, d.copy(driveS = 31 * 60 + 20)))
     }
 
     @Test fun warningsDropDriverWaitAndDuplicates() {

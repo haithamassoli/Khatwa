@@ -1,5 +1,8 @@
 package com.haithamassoli.khatwa
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +53,10 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun OnboardingScreen(vm: MainViewModel) {
     val settings by vm.store.settings.collectAsState()
+    // Ask for location here, once, so the plan screen can start from where the user is. Denied is fine: they pick on the map.
+    val finish = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        vm.updateSettings { it.copy(onboarded = true) }
+    }
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
@@ -90,7 +97,7 @@ fun OnboardingScreen(vm: MainViewModel) {
             }
             NightWalkSwitch(settings.noWalkAtNight) { v -> vm.updateSettings { it.copy(noWalkAtNight = v) } }
             Button(
-                onClick = { vm.updateSettings { it.copy(onboarded = true) } },
+                onClick = { finish.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)) },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) { Text("ابدأ") }
         }

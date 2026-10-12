@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.LocalTaxi
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Terrain
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -129,11 +130,12 @@ internal fun OptionSummary(o: RouteOption, base: RouteOption?, objective: Object
             else tripSentence(o),
             style = MaterialTheme.typography.bodyLarge,
         )
-        if (!isBase && base != null && objective == Objective.MODELED && base.driveS - o.driveS - (base.modeledS - o.modeledS) >= 60) {
+        if (!isBase && base != null && objective == Objective.FASTEST && base.driveS - o.driveS - (base.modeledS - o.modeledS) >= 60) {
             val d = deltaDuration(o.driveS - base.driveS)
             InfoLine(Icons.Outlined.LocalTaxi, "وقت السيارة: ${d.text}", color = deltaColor(d))
         }
-        if (!isBase) fareDelta(o, base)?.let { d ->
+        // The headline already carries the fare when it's the goal or a cost (see savingTitle).
+        if (!isBase && base != null && objective == Objective.FASTEST && base.fare() - o.fare() > -0.10) fareDelta(o, base)?.let { d ->
             InfoLine(Icons.Outlined.Payments, d.text, color = deltaColor(d))
         }
         if (isBase && o.fareJod != null) InfoLine(Icons.Outlined.Payments, "الأجرة التقديرية نحو ${fmtJod(o.fareJod)}")
@@ -190,8 +192,8 @@ internal fun PointLine(label: String, c: Candidate, saved: Boolean, onKeep: (() 
             }
             when {
                 saved -> StatusChip(Icons.Outlined.BookmarkAdded, "محفوظة")
-                c.auto -> StatusChip(Icons.Outlined.Place, "نقطة مقترحة")
                 c.verification == Verification.REPORTED -> StatusChip(Icons.Outlined.Flag, "مُبلغ عنها")
+                c.upVotes > 0 -> StatusChip(Icons.Outlined.ThumbUp, "تقييمات إيجابية: ${c.upVotes}")
                 c.verification == Verification.UNVERIFIED -> StatusChip(Icons.Outlined.Place, "غير مراجعة")
             }
         }

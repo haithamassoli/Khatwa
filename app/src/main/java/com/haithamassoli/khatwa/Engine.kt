@@ -7,7 +7,7 @@ import kotlin.math.roundToInt
 object Engine {
     // An alternative must save at least max(floor, 10% of the baseline) on the chosen objective.
     const val MIN_SAVE_S = 180
-    const val MIN_SAVE_M = 300
+    const val MIN_SAVE_FILS = 250     // 0.25 JOD: less than that isn't worth walking for
     const val MIN_SAVE_FRACTION = 0.10
     const val CLIMB_S_PER_M = 6       // Naismith: ~1 min per 10 m of ascent
     const val SHRINK_WARN_S = 60      // warn when verification cut the top saving by at least this much
@@ -108,7 +108,7 @@ object Engine {
                 add("تراجع التوفير بعد التحقق من المسار الفعلي، $what" + if (best.isEmpty()) "؛ الرحلة المباشرة هي الأفضل" else "")
             }
             val top = best.firstOrNull()
-            if (top != null && objective != Objective.DRIVE_DISTANCE) {
+            if (top != null && objective == Objective.FASTEST) {
                 val now = saving(objective, baseline, top)
                 if (saving(objective, baseline.estimate(), top.estimate()) - now >= SHRINK_WARN_S)
                     add("التوفير تراجع إلى ${(now / 60.0).roundToInt()} د بسبب الزحمة")
@@ -121,26 +121,25 @@ object Engine {
     fun saving(objective: Objective, baseline: RouteOption, o: RouteOption) = primary(objective)(baseline) - primary(objective)(o)
 
     fun minSaving(objective: Objective, baseline: RouteOption): Int {
-        val floor = if (objective == Objective.DRIVE_DISTANCE) MIN_SAVE_M else MIN_SAVE_S
+        val floor = if (objective == Objective.CHEAPEST) MIN_SAVE_FILS else MIN_SAVE_S
         return maxOf(floor, ceil(primary(objective)(baseline) * MIN_SAVE_FRACTION).toInt())
     }
 
     fun worthIt(objective: Objective, baseline: RouteOption, o: RouteOption): Boolean {
         if (saving(objective, baseline, o) < minSaving(objective, baseline)) return false
         // Walking must cost less than the ride time it saves (walk 5 min to save 3 is no deal).
-        return objective != Objective.MODELED || baseline.driveS - o.driveS > o.walkTotalS
+        return objective != Objective.FASTEST || baseline.driveS - o.driveS > o.walkTotalS
     }
 
     fun comparator(objective: Objective): Comparator<RouteOption> = when (objective) {
-        Objective.MODELED -> compareBy<RouteOption>({ it.modeledS }, { it.walkTotalS }, { it.driveM })
-        Objective.DRIVE_TIME -> compareBy({ it.driveS }, { it.modeledS }, { it.walkTotalS })
-        Objective.DRIVE_DISTANCE -> compareBy({ it.driveM }, { it.modeledS }, { it.walkTotalS })
+        Objective.FASTEST -> compareBy<RouteOption>({ it.modeledS }, { it.walkTotalS }, { it.driveM })
+        Objective.CHEAPEST -> compareBy({ fils(it) }, { it.modeledS }, { it.walkTotalS })
     }
 
     private fun noSaving(objective: Objective, baseline: RouteOption): String {
         val min = minSaving(objective, baseline)
-        if (objective == Objective.DRIVE_DISTANCE)
-            return "لا يوجد بديل يختصر ${(min + 9) / 10 * 10} م على الأقل من القيادة؛ الرحلة المباشرة هي الأفضل"
+        if (objective == Objective.CHEAPEST)
+            return "لا يوجد بديل يوفّر ${fmtJod(min / 1000.0)} على الأقل من الأجرة؛ الرحلة المباشرة هي الأفضل"
         val m = (min + 59) / 60
         return "لا يوجد بديل يوفّر $m ${if (m in 3..10) "دقائق" else "دقيقة"} على الأقل؛ الرحلة المباشرة هي الأفضل"
     }
@@ -150,10 +149,11 @@ object Engine {
     private fun RouteOption.estimate() = copy(driveS = estimatedDriveS ?: driveS)
 
     private fun primary(objective: Objective): (RouteOption) -> Int = when (objective) {
-        Objective.MODELED -> { o -> o.modeledS }
-        Objective.DRIVE_TIME -> { o -> o.driveS }
-        Objective.DRIVE_DISTANCE -> { o -> o.driveM }
+        Objective.FASTEST -> { o -> o.modeledS }
+        Objective.CHEAPEST -> ::fils
     }
+
+    private fun fils(o: RouteOption) = (o.fare() * 1000).roundToInt()
 
     // a dominates b: no worse on every metric, strictly better on at least one (PRD §8.3).
     private fun dominates(a: RouteOption, b: RouteOption): Boolean {

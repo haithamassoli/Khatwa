@@ -171,9 +171,9 @@ fun DetailScreen(vm: MainViewModel) {
                     )
                 )
                 OptionSummary(option, base, input.objective)
-                if (option.verified) InfoLine(Icons.Outlined.Verified, "✓ تم التحقق من المسار الفعلي", color = MaterialTheme.colorScheme.primary)
+                if (option.verified) InfoLine(Icons.Outlined.Verified, verifiedText(result), color = MaterialTheme.colorScheme.primary)
                 val warnings = listOfNotNull(
-                    detail?.let { detailMismatch(option, base, input.objective, it) },
+                    detail?.let { detailMismatch(option, base, it) },
                     detail?.let { walkOverrun(it, input) },
                 )
                 warnings.forEach { WarningCard(it) }
@@ -183,13 +183,13 @@ fun DetailScreen(vm: MainViewModel) {
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                PointLines(option, saved) { keep = it }
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("الأرقام", style = MaterialTheme.typography.titleSmall)
                         OptionNumbers(option, base)
                     }
                 }
+                PointLines(option, saved) { keep = it }
                 Text(
                     "* الأوقات دون احتساب انتظار السائق. الطريق الذي يختاره السائق قد يختلف؛ تأكد من السعر في تطبيق التوصيل قبل الحجز.",
                     style = MaterialTheme.typography.bodySmall,

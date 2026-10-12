@@ -52,6 +52,9 @@ fun fmtAgo(atMs: Long, nowMs: Long = System.currentTimeMillis()): String {
     }
 }
 
+/** "✓ تحقّقنا من المسار الفعلي قبل 4 دقائق": traffic changes, so the age matters. */
+fun verifiedText(r: SearchResult, nowMs: Long = System.currentTimeMillis()) = "✓ تحقّقنا من المسار الفعلي قبل ${fmtAgo(r.calculatedAtMs, nowMs)}"
+
 fun fmtClock(ms: Long): String = SimpleDateFormat("HH:mm", Locale.US).format(Date(ms))
 
 /** A difference vs the direct trip. [sign]: -1 better, 0 about the same, 1 worse. The arrow carries the meaning, colour is secondary. */
@@ -80,29 +83,39 @@ fun fmtDeltaDuration(deltaS: Int): String = deltaDuration(deltaS).text
 
 fun fmtDeltaDistance(deltaM: Int): String = deltaDistance(deltaM).text
 
-/** Saving vs the direct trip in the objective's unit (seconds or meters); positive = better. */
-fun savingOf(o: RouteOption, base: RouteOption, objective: Objective): Int = when (objective) {
-    Objective.MODELED -> base.modeledS - o.modeledS
-    Objective.DRIVE_TIME -> base.driveS - o.driveS
-    Objective.DRIVE_DISTANCE -> base.driveM - o.driveM
-}
-
-/** Card headline: "وفّر 8 دقائق" / "مسافة أقصر بـ 1.2 كم". */
+/**
+ * Card headline: the saving on the chosen goal, then what it costs on the other one, so a "deal" never hides
+ * a loss: "وفّر 8 دقائق" / "أرخص بـ 0.30 د.أ · أبطأ بـ 4 دقائق".
+ */
 fun savingTitle(o: RouteOption, base: RouteOption?, objective: Objective): String {
     if (base == null) return "خيار بديل"
-    val d = savingOf(o, base, objective)
-    return if (objective == Objective.DRIVE_DISTANCE) when {
-        d >= 50 -> "مسافة أقصر بـ ${fmtDistance(d)}"
-        d > -50 -> "نفس المسافة تقريباً"
-        else -> "مسافة أطول بـ ${fmtDistance(-d)}"
-    } else {
-        val tail = if (objective == Objective.DRIVE_TIME) " بالسيارة" else ""
-        when {
-            d >= 30 -> "وفّر ${fmtMinutesAr(d)}$tail"
-            d > -30 -> "نفس الوقت تقريباً"
-            else -> "أبطأ ${bi(fmtMinutesAr(-d))}$tail"
-        }
+    val dS = base.modeledS - o.modeledS          // positive = faster
+    val dJod = base.fare() - o.fare()            // positive = cheaper
+    val time = when {
+        dS >= 30 -> "وفّر ${fmtMinutesAr(dS)}"
+        dS > -30 -> "نفس الوقت تقريباً"
+        else -> "أبطأ ${bi(fmtMinutesAr(-dS))}"
     }
+    val money = when {
+        dJod >= 0.05 -> "أرخص بـ ${fmtJod(dJod)}"
+        dJod > -0.05 -> "نفس الأجرة تقريباً"
+        else -> "أغلى بـ ${fmtJod(-dJod)}"
+    }
+    return when (objective) {
+        Objective.FASTEST -> if (dJod <= -0.10) "$time · $money" else time
+        Objective.CHEAPEST -> if (dS <= -60) "$money · $time" else money
+    }
+}
+
+/** One-line widget hint from the last search: "امشِ 3 د ووفّر 6 د" / "المباشر أفضل". */
+fun widgetTip(r: SearchResult): String {
+    val base = r.baseline ?: return ""
+    val o = r.alternatives.firstOrNull() ?: return "المباشر أفضل"
+    val gain = when (r.input.objective) {
+        Objective.FASTEST -> fmtDuration(base.modeledS - o.modeledS)
+        Objective.CHEAPEST -> fmtJod(base.fare() - o.fare())
+    }
+    return if (o.walkTotalS > 0) "امشِ ${fmtDuration(o.walkTotalS)} ووفّر $gain" else "وفّر $gain"
 }
 
 /** "أمام صيدلية الشفاء (شارع الجامعة)": the street is added only when the name doesn't already contain it. */
@@ -139,15 +152,14 @@ fun fareDelta(o: RouteOption, base: RouteOption?): Delta? {
  * Warning when the detailed route contradicts the numbers shown on the card (e.g. an unverified matrix estimate);
  * null when they agree. Detail walking legs fall back to the card values when missing.
  */
-fun detailMismatch(o: RouteOption, base: RouteOption?, objective: Objective, d: OptionDetail): String? {
+fun detailMismatch(o: RouteOption, base: RouteOption?, d: OptionDetail): String? {
     val driveS = d.driveS ?: return null
     if (abs(driveS - o.driveS) < max(60, o.driveS / 10)) return null
     val head = "تنبيه: المسار الفعلي بالسيارة يستغرق ${fmtDuration(driveS)} لا ${fmtDuration(o.driveS)}"
     if (base == null || o == base) return "$head."
     val actual = o.copy(driveS = driveS, walkStartS = d.walkStartS ?: o.walkStartS, walkEndS = d.walkEndS ?: o.walkEndS)
-    val timeObjective = if (objective == Objective.DRIVE_TIME) Objective.DRIVE_TIME else Objective.MODELED
-    val before = savingOf(o, base, timeObjective)
-    val after = savingOf(actual, base, timeObjective)
+    val before = base.modeledS - o.modeledS
+    val after = base.modeledS - actual.modeledS
     return when {
         after < 30 -> "$head، فالتوفير اختفى مقارنة بالرحلة المباشرة."
         after < before - 30 -> "$head، فالتوفير تراجع إلى ${fmtMinutesAr(after)}."
